@@ -3,9 +3,11 @@ import type { User } from 'firebase/auth';
 import {
   AlertTriangle,
   BookOpen,
+  Check,
   Clock,
   Cloud,
   Coins,
+  Copy,
   Heart,
   Home,
   LogIn,
@@ -18,6 +20,7 @@ import {
   Sparkles,
   Swords,
   Trophy,
+  UserPlus,
   Users,
   Volume2,
   VolumeX,
@@ -35,11 +38,13 @@ import {
   ShopCategory,
   ShopItem,
   TIME_MODES,
-  TurnRoom,
+  TurnMatch,
 } from '../types/game';
+import type { AuthErrorDetail } from '../firebase/config';
+import { AuthErrorBox } from './AuthErrorBox';
 import { ExchangeModal, formatRupiah } from './ExchangeModal';
 import { GuideModal } from './GuideModal';
-import { MultiplayerModal } from './MultiplayerModal';
+import { InviteModal } from './InviteModal';
 import { ShopModal } from './ShopModal';
 
 interface CharacterDashboardProps {
@@ -49,26 +54,28 @@ interface CharacterDashboardProps {
   onSelectDuration: (mode: InGameDuration) => void;
   saveStore: PlayerSaveStore;
   user: User | null;
+  playerCode: string | null;
   authBusy: boolean;
   cloudSynced: boolean;
-  showMultiplayer: boolean;
-  activeRoom: TurnRoom | null;
-  localDuelRole: 'player1' | 'player2' | null;
-  roomError: string | null;
-  roomBusy: boolean;
+  showInviteModal: boolean;
+  activeMatch: TurnMatch | null;
+  incomingInvites: TurnMatch[];
+  matchError: string | null;
+  authError: AuthErrorDetail | null;
+  matchBusy: boolean;
   muted: boolean;
   vibrationEnabled: boolean;
   bombReturnNotice: string | null;
   onDismissBombNotice: () => void;
   onGoogleLogin: () => void;
   onGoogleLogout: () => void;
-  onOpenMultiplayer: () => void;
-  onCloseMultiplayer: () => void;
-  onCreateRoom: (charId: CharacterId, duration: InGameDuration) => void;
-  onJoinRoom: (roomCode: string, charId: CharacterId) => void;
-  onStartDuelTurn: () => void;
-  onCancelWaitingRoom: () => void;
-  onLeaveRoom: () => void;
+  onOpenInviteModal: () => void;
+  onCloseInviteModal: () => void;
+  onSendInvite: (targetCode: string, myChar: CharacterId, duration: InGameDuration) => void;
+  onAcceptInvite: (match: TurnMatch, myChar: CharacterId) => void;
+  onDeclineInvite: (matchId: string) => void;
+  onCancelOutgoingInvite: (matchId: string) => void;
+  onClearMatch: () => void;
   onToggleMute: () => void;
   onToggleVibration: () => void;
   onExchangePoints: (tier: ExchangeTier) => void;
@@ -93,26 +100,28 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
   onSelectDuration,
   saveStore,
   user,
+  playerCode,
   authBusy,
   cloudSynced,
-  showMultiplayer,
-  activeRoom,
-  localDuelRole,
-  roomError,
-  roomBusy,
+  showInviteModal,
+  activeMatch,
+  incomingInvites,
+  matchError,
+  authError,
+  matchBusy,
   muted,
   vibrationEnabled,
   bombReturnNotice,
   onDismissBombNotice,
   onGoogleLogin,
   onGoogleLogout,
-  onOpenMultiplayer,
-  onCloseMultiplayer,
-  onCreateRoom,
-  onJoinRoom,
-  onStartDuelTurn,
-  onCancelWaitingRoom,
-  onLeaveRoom,
+  onOpenInviteModal,
+  onCloseInviteModal,
+  onSendInvite,
+  onAcceptInvite,
+  onDeclineInvite,
+  onCancelOutgoingInvite,
+  onClearMatch,
   onToggleMute,
   onToggleVibration,
   onExchangePoints,
@@ -127,6 +136,14 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
   const [showCharacterDrawer, setShowCharacterDrawer] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+
+  const handleCopyPlayerCode = () => {
+    if (!playerCode) return;
+    navigator.clipboard?.writeText(playerCode).catch(() => {});
+    setCopiedId(true);
+    window.setTimeout(() => setCopiedId(false), 1800);
+  };
 
   const activeChar = CHARACTERS[selectedCharacter];
   const canRedeemAny = saveStore.totalPoints >= 500;
@@ -322,8 +339,35 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
           </button>
         </div>
 
-        {/* Center Notification or Quick Drawer */}
+        {/* Center Notification, Incoming Invite, or Quick Drawer */}
         <div className="pointer-events-none flex flex-col items-center justify-end self-end pb-2 max-w-[68%] sm:max-w-md">
+          {incomingInvites.length > 0 && !showInviteModal && (
+            <div className="pointer-events-auto card-25d mb-2 w-full rounded-2xl bg-[#E8F8EE] p-3 text-xs text-[#1F5C36] space-y-2">
+              <div className="flex items-center gap-2 font-display text-sm font-bold text-[#432B1D]">
+                <UserPlus className="h-4.5 w-4.5 shrink-0 text-[#2B9348]" strokeWidth={2.75} />
+                <span className="truncate">
+                  {incomingInvites[0].player1Name} mengajak Mabar!
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onAcceptInvite(incomingInvites[0], selectedCharacter)}
+                  className="btn-25d flex-1 rounded-xl bg-[#49C829] py-1.5 font-display text-xs font-bold text-white"
+                >
+                  Terima &amp; Masuk Arena ({incomingInvites[0].durationSec}d)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeclineInvite(incomingInvites[0].matchId)}
+                  className="btn-25d rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-[#9B1C2E]"
+                >
+                  Tolak
+                </button>
+              </div>
+            </div>
+          )}
+
           {bombReturnNotice && (
             <div className="pointer-events-auto card-25d mb-2 flex items-center gap-2 rounded-2xl bg-[#FFE8EB] px-3.5 py-2 text-xs font-bold text-[#9B1C2E]">
               <AlertTriangle className="h-4.5 w-4.5 shrink-0 text-[#E63946]" strokeWidth={2.75} />
@@ -414,21 +458,28 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
 
         {/* Right Floating Medallions */}
         <div className="pointer-events-auto flex flex-col gap-3.5 self-start pt-4 sm:self-center sm:pt-0">
-          {/* Duel Online Turn-Based Medallion */}
+          {/* Invite Mabar Medallion */}
           <button
             type="button"
-            onClick={onOpenMultiplayer}
-            className="group flex flex-col items-center focus:outline-none"
+            onClick={onOpenInviteModal}
+            className="group relative flex flex-col items-center focus:outline-none"
           >
             <div
               className={`flex h-14 w-14 items-center justify-center rounded-full border-[3px] border-[#432B1D] shadow-[0_4px_0_#432B1D] transition-transform group-hover:-translate-y-0.5 group-active:translate-y-0.5 sm:h-16 sm:w-16 ${
-                activeRoom ? 'bg-[#FFD166]' : 'bg-[#FFE0EA]'
+                incomingInvites.length > 0 || activeMatch
+                  ? 'bg-[#FFD166]'
+                  : 'bg-[#FFE0EA]'
               }`}
             >
               <Swords className="h-6.5 w-6.5 text-[#432B1D]" strokeWidth={2.75} />
             </div>
+            {incomingInvites.length > 0 && (
+              <span className="absolute -top-1 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#432B1D] bg-[#49C829] font-mono-num text-[10px] font-bold text-white">
+                {incomingInvites.length}
+              </span>
+            )}
             <span className="-mt-2 rounded-lg border-2 border-[#432B1D] bg-[#D94F70] px-2 py-0.5 font-display text-[11px] font-bold text-white shadow-[0_2px_0_#432B1D]">
-              {activeRoom ? activeRoom.roomCode : 'Duel Online'}
+              Invite Mabar
             </span>
           </button>
 
@@ -728,6 +779,36 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Unique 6-digit Mabar ID Card inside Profile */}
+                <div className="flex items-center justify-between rounded-2xl border-2 border-[#432B1D] bg-[#FFF8E6] px-3.5 py-2.5">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#8A5A3B]">
+                      ID Unik Mabar Kamu
+                    </div>
+                    <div className="font-mono-num text-xl font-bold tracking-[0.2em] text-[#432B1D]">
+                      {playerCode || '......'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!playerCode}
+                    onClick={handleCopyPlayerCode}
+                    className="btn-25d flex items-center gap-1 rounded-xl bg-[#FFD166] px-2.5 py-1.5 text-xs font-bold text-[#432B1D] disabled:opacity-50"
+                  >
+                    {copiedId ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" strokeWidth={2.75} />
+                        <span>Disalin</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" strokeWidth={2.5} />
+                        <span>Salin ID</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-xl border border-[#432B1D]/20 bg-[#FFF2DF] p-2.5">
                     <div className="text-[#7A5B47] font-semibold">Rekor Dudu</div>
@@ -760,6 +841,7 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
                 <p className="text-xs leading-relaxed text-[#7A5B47]">
                   Simpan progres poin, saldo Rupiah, item belanja, dan rekor ke cloud Firebase serta mainkan mode <strong>Duel Online Turn-Based</strong> bersama teman!
                 </p>
+                {authError && <AuthErrorBox error={authError} />}
                 <button
                   type="button"
                   disabled={authBusy}
@@ -807,23 +889,25 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
         />
       )}
 
-      {showMultiplayer && (
-        <MultiplayerModal
+      {showInviteModal && (
+        <InviteModal
           user={user}
+          playerCode={playerCode}
           authBusy={authBusy}
           selectedCharacter={selectedCharacter}
           durationMode={durationMode}
-          activeRoom={activeRoom}
-          localRole={localDuelRole}
-          roomError={roomError}
-          roomBusy={roomBusy}
+          activeMatch={activeMatch}
+          incomingInvites={incomingInvites}
+          matchError={matchError}
+          authError={authError}
+          matchBusy={matchBusy}
           onGoogleLogin={onGoogleLogin}
-          onCreateRoom={onCreateRoom}
-          onJoinRoom={onJoinRoom}
-          onStartTurn={onStartDuelTurn}
-          onCancelWaitingRoom={onCancelWaitingRoom}
-          onLeaveRoom={onLeaveRoom}
-          onClose={onCloseMultiplayer}
+          onSendInvite={onSendInvite}
+          onAcceptInvite={onAcceptInvite}
+          onDeclineInvite={onDeclineInvite}
+          onCancelOutgoingInvite={onCancelOutgoingInvite}
+          onClearMatch={onClearMatch}
+          onClose={onCloseInviteModal}
         />
       )}
     </div>

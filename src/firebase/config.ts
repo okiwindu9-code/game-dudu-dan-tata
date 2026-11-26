@@ -78,6 +78,70 @@ async function testConnection() {
 }
 void testConnection();
 
+export interface AuthErrorDetail {
+  code: string;
+  message: string;
+  unauthorizedDomain?: string;
+  consoleUrl?: string;
+}
+
+export function parseAuthError(err: unknown): AuthErrorDetail {
+  const rawCode =
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    typeof (err as { code?: unknown }).code === 'string'
+      ? (err as { code: string }).code
+      : '';
+  const rawMsg = err instanceof Error ? err.message : String(err);
+
+  if (
+    rawCode === 'auth/unauthorized-domain' ||
+    rawMsg.includes('auth/unauthorized-domain')
+  ) {
+    const hostname =
+      typeof window !== 'undefined' && window.location.hostname
+        ? window.location.hostname
+        : 'domain-saat-ini';
+    return {
+      code: 'auth/unauthorized-domain',
+      message: `Domain "${hostname}" belum terdaftar di Authorized Domains Firebase Authentication.`,
+      unauthorizedDomain: hostname,
+      consoleUrl: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`,
+    };
+  }
+
+  if (rawCode === 'auth/popup-blocked' || rawMsg.includes('auth/popup-blocked')) {
+    return {
+      code: 'auth/popup-blocked',
+      message:
+        'Popup login diblokir oleh browser. Izinkan pop-up untuk halaman ini di pengaturan browser Android lalu coba lagi.',
+    };
+  }
+
+  if (
+    rawCode === 'auth/popup-closed-by-user' ||
+    rawCode === 'auth/cancelled-popup-request'
+  ) {
+    return {
+      code: rawCode,
+      message: 'Login Google dibatalkan sebelum selesai.',
+    };
+  }
+
+  if (rawCode === 'auth/network-request-failed') {
+    return {
+      code: rawCode,
+      message: 'Koneksi internet bermasalah saat mencoba masuk dengan Google.',
+    };
+  }
+
+  return {
+    code: rawCode || 'auth/unknown',
+    message: rawMsg || 'Login Google gagal. Silakan coba lagi.',
+  };
+}
+
 export async function signInWithGooglePopup() {
   return signInWithPopup(auth, googleProvider);
 }

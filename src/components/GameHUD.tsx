@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Eye,
   Flame,
   Heart,
   Home,
@@ -32,6 +33,10 @@ interface GameHUDProps {
   activeBoosters: ActiveBoosters;
   hazardFlash: boolean;
   duelBadge?: string | null;
+  spectatingName?: string | null;
+  targetScoreToBeat?: number | null;
+  readyForMyTurn?: boolean;
+  onStartMyTurn?: () => void;
   muted: boolean;
   vibrationEnabled: boolean;
   onToggleMute: () => void;
@@ -51,6 +56,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   activeBoosters,
   hazardFlash,
   duelBadge,
+  spectatingName,
+  targetScoreToBeat,
+  readyForMyTurn,
+  onStartMyTurn,
   muted,
   vibrationEnabled,
   onToggleMute,
@@ -62,6 +71,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onJump,
 }) => {
   const char = CHARACTERS[characterId];
+  const isSpectating = phase === 'spectating';
   const isLowTime = hud.timeLeft <= 10;
   const livesPct =
     hud.maxLives > 0 ? Math.max(0, Math.min(100, (hud.lives / hud.maxLives) * 100)) : 0;
@@ -108,8 +118,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div className="flex items-start justify-between gap-2 sm:gap-3">
           {/* Left: Score & Active Character */}
           <div className="pointer-events-auto card-25d flex flex-col rounded-2xl bg-[#FFFBF7] px-3 py-1.5 sm:px-4 sm:py-2">
-            <div className="text-[10px] font-bold tracking-wide text-[#8A6752] sm:text-[11px]">
-              {char.name} · Skor
+            <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-wide text-[#8A6752] sm:text-[11px]">
+              {isSpectating && (
+                <span className="inline-block h-2 w-2 rounded-full bg-[#E63946] animate-pulse" />
+              )}
+              <span>
+                {isSpectating && spectatingName
+                  ? `${spectatingName} (${char.name})`
+                  : `${char.name} · Skor`}
+              </span>
             </div>
             <div className="font-mono-num flex items-baseline gap-1.5 text-xl leading-tight font-bold text-[#432B1D] sm:gap-2 sm:text-2xl">
               <span>{hud.score}</span>
@@ -119,7 +136,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 </span>
               )}
             </div>
-            {(activeBoosters.speedBoost || activeBoosters.time2xBoost) && (
+            {typeof targetScoreToBeat === 'number' && !isSpectating && (
+              <div className="mt-0.5 text-[10px] font-bold text-[#D94F70]">
+                Target P1: {targetScoreToBeat} pts
+              </div>
+            )}
+            {(activeBoosters.speedBoost || activeBoosters.time2xBoost) && !isSpectating && (
               <div className="mt-0.5 text-[10px] font-bold text-[#2B6E44]">
                 {[
                   activeBoosters.speedBoost ? 'Speed +35%' : '',
@@ -173,13 +195,22 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </div>
             </div>
 
-            {duelBadge && (
-              <div className="card-25d flex items-center gap-1.5 rounded-xl bg-[#FFE3EC] px-3 py-1">
-                <Swords className="h-3.5 w-3.5 text-[#D94F70]" strokeWidth={2.75} />
-                <span className="font-display text-xs font-bold text-[#432B1D] whitespace-nowrap">
-                  {duelBadge}
+            {isSpectating ? (
+              <div className="card-25d flex items-center gap-1.5 rounded-xl bg-[#432B1D] px-3 py-1 text-white">
+                <Eye className="h-3.5 w-3.5 text-[#FFD166]" strokeWidth={2.75} />
+                <span className="font-display text-xs font-bold whitespace-nowrap">
+                  LIVE · {spectatingName || 'Lawan'} Main — Tunggu Giliranmu
                 </span>
               </div>
+            ) : (
+              duelBadge && (
+                <div className="card-25d flex items-center gap-1.5 rounded-xl bg-[#FFE3EC] px-3 py-1">
+                  <Swords className="h-3.5 w-3.5 text-[#D94F70]" strokeWidth={2.75} />
+                  <span className="font-display text-xs font-bold text-[#432B1D] whitespace-nowrap">
+                    {duelBadge}
+                  </span>
+                </div>
+              )
             )}
 
             {(hud.combo > 0 || hud.feverActive) && (
@@ -207,44 +238,58 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             )}
           </div>
 
-          {/* Right: Vibration, Audio & Pause */}
+          {/* Right: Vibration, Audio & Pause / Leave Spectator */}
           <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={onToggleVibration}
-              className={`btn-25d hidden sm:flex h-10 w-10 items-center justify-center rounded-xl sm:h-11 sm:w-11 ${
-                vibrationEnabled
-                  ? 'bg-[#FFFBF7] text-[#432B1D]'
-                  : 'bg-[#F0E6DE] text-[#8F705D]'
-              }`}
-              aria-label={vibrationEnabled ? 'Matikan getaran' : 'Nyalakan getaran'}
-            >
-              <Smartphone className="h-5 w-5" strokeWidth={2.5} />
-            </button>
-            <button
-              type="button"
-              onClick={onToggleMute}
-              className="btn-25d flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFFBF7] text-[#432B1D] sm:h-11 sm:w-11"
-              aria-label={muted ? 'Nyalakan suara' : 'Matikan suara'}
-            >
-              {muted ? (
-                <VolumeX className="h-5 w-5" strokeWidth={2.5} />
-              ) : (
-                <Volume2 className="h-5 w-5" strokeWidth={2.5} />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onTogglePause}
-              className="btn-25d flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFFBF7] text-[#432B1D] sm:h-11 sm:w-11"
-              aria-label={phase === 'paused' ? 'Lanjutkan' : 'Jeda permainan'}
-            >
-              {phase === 'paused' ? (
-                <Play className="h-5 w-5 fill-current" strokeWidth={2.5} />
-              ) : (
-                <Pause className="h-5 w-5" strokeWidth={2.5} />
-              )}
-            </button>
+            {!isSpectating && (
+              <>
+                <button
+                  type="button"
+                  onClick={onToggleVibration}
+                  className={`btn-25d hidden sm:flex h-10 w-10 items-center justify-center rounded-xl sm:h-11 sm:w-11 ${
+                    vibrationEnabled
+                      ? 'bg-[#FFFBF7] text-[#432B1D]'
+                      : 'bg-[#F0E6DE] text-[#8F705D]'
+                  }`}
+                  aria-label={vibrationEnabled ? 'Matikan getaran' : 'Nyalakan getaran'}
+                >
+                  <Smartphone className="h-5 w-5" strokeWidth={2.5} />
+                </button>
+                <button
+                  type="button"
+                  onClick={onToggleMute}
+                  className="btn-25d flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFFBF7] text-[#432B1D] sm:h-11 sm:w-11"
+                  aria-label={muted ? 'Nyalakan suara' : 'Matikan suara'}
+                >
+                  {muted ? (
+                    <VolumeX className="h-5 w-5" strokeWidth={2.5} />
+                  ) : (
+                    <Volume2 className="h-5 w-5" strokeWidth={2.5} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onTogglePause}
+                  className="btn-25d flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFFBF7] text-[#432B1D] sm:h-11 sm:w-11"
+                  aria-label={phase === 'paused' ? 'Lanjutkan' : 'Jeda permainan'}
+                >
+                  {phase === 'paused' ? (
+                    <Play className="h-5 w-5 fill-current" strokeWidth={2.5} />
+                  ) : (
+                    <Pause className="h-5 w-5" strokeWidth={2.5} />
+                  )}
+                </button>
+              </>
+            )}
+            {isSpectating && (
+              <button
+                type="button"
+                onClick={onBackToMenu}
+                className="btn-25d flex h-10 items-center gap-1.5 rounded-xl bg-[#FFFBF7] px-3 text-xs font-bold text-[#432B1D]"
+              >
+                <Home className="h-4 w-4" strokeWidth={2.5} />
+                <span>Keluar</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -299,45 +344,77 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
+      {/* Player 2 Turn Takeover Banner right on the 3D Arena */}
+      {isSpectating && readyForMyTurn && onStartMyTurn && (
+        <div className="pointer-events-auto fixed inset-x-0 bottom-20 z-20 flex justify-center px-4">
+          <div className="card-25d flex w-full max-w-sm flex-col items-center gap-2.5 rounded-3xl bg-[#FFFBF7] p-4 text-center">
+            <div className="font-display text-base font-bold text-[#432B1D]">
+              Giliranmu Sekarang!
+            </div>
+            {typeof targetScoreToBeat === 'number' && (
+              <p className="text-xs font-semibold text-[#7A5B47]">
+                Lawan mencetak <strong className="font-mono-num text-[#D94F70]">{targetScoreToBeat} poin</strong>. Ayo kejar &amp; menangkan!
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={onStartMyTurn}
+              className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#49C829] py-3 font-display text-base font-bold text-white"
+            >
+              <Play className="h-5 w-5 fill-current" strokeWidth={2.5} />
+              Mulai Giliranmu!
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Touch / Quick Helper Bar */}
-      <div className="flex items-end justify-between p-3 sm:p-5">
-        <div className="pointer-events-auto flex items-center gap-2 md:hidden">
+      {isSpectating ? (
+        <div className="flex justify-center p-3 sm:p-5">
+          <div className="card-25d rounded-2xl bg-[#FFFBF7]/95 px-4 py-2 text-center font-display text-xs font-bold text-[#432B1D]">
+            Kamu sedang bersorak di tikar piknik sambil menonton {spectatingName || 'lawan'} bermain live!
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-end justify-between p-3 sm:p-5">
+          <div className="pointer-events-auto flex items-center gap-2 md:hidden">
+            <button
+              type="button"
+              onPointerDown={() => onVirtualMove(-1)}
+              onPointerUp={() => onVirtualMove(0)}
+              onPointerLeave={() => onVirtualMove(0)}
+              className="btn-25d flex h-13 w-14 items-center justify-center rounded-2xl bg-[#FFFBF7] text-[#432B1D]"
+              aria-label="Gerak ke kiri"
+            >
+              <ChevronLeft className="h-7 w-7" strokeWidth={2.75} />
+            </button>
+            <button
+              type="button"
+              onPointerDown={() => onVirtualMove(1)}
+              onPointerUp={() => onVirtualMove(0)}
+              onPointerLeave={() => onVirtualMove(0)}
+              className="btn-25d flex h-13 w-14 items-center justify-center rounded-2xl bg-[#FFFBF7] text-[#432B1D]"
+              aria-label="Gerak ke kanan"
+            >
+              <ChevronRight className="h-7 w-7" strokeWidth={2.75} />
+            </button>
+          </div>
+
+          <div className="hidden md:block text-xs font-bold text-[#5A4031]/90 bg-[#FFFBF7]/95 border-2 border-[#432B1D]/30 rounded-xl px-3.5 py-1.5">
+            A / D atau ← / → atau Geser · Spasi untuk Lompat · Hindari Bom!
+          </div>
+
           <button
             type="button"
-            onPointerDown={() => onVirtualMove(-1)}
-            onPointerUp={() => onVirtualMove(0)}
-            onPointerLeave={() => onVirtualMove(0)}
-            className="btn-25d flex h-13 w-14 items-center justify-center rounded-2xl bg-[#FFFBF7] text-[#432B1D]"
-            aria-label="Gerak ke kiri"
+            onPointerDown={onJump}
+            className="pointer-events-auto btn-25d flex h-13 items-center gap-1.5 rounded-2xl bg-[#FFD166] px-4 font-display text-sm font-bold text-[#432B1D] md:hidden"
+            aria-label="Lompat"
           >
-            <ChevronLeft className="h-7 w-7" strokeWidth={2.75} />
-          </button>
-          <button
-            type="button"
-            onPointerDown={() => onVirtualMove(1)}
-            onPointerUp={() => onVirtualMove(0)}
-            onPointerLeave={() => onVirtualMove(0)}
-            className="btn-25d flex h-13 w-14 items-center justify-center rounded-2xl bg-[#FFFBF7] text-[#432B1D]"
-            aria-label="Gerak ke kanan"
-          >
-            <ChevronRight className="h-7 w-7" strokeWidth={2.75} />
+            <ChevronUp className="h-5 w-5" strokeWidth={2.75} />
+            Lompat
           </button>
         </div>
-
-        <div className="hidden md:block text-xs font-bold text-[#5A4031]/90 bg-[#FFFBF7]/95 border-2 border-[#432B1D]/30 rounded-xl px-3.5 py-1.5">
-          A / D atau ← / → atau Geser · Spasi untuk Lompat · Hindari Bom!
-        </div>
-
-        <button
-          type="button"
-          onPointerDown={onJump}
-          className="pointer-events-auto btn-25d flex h-13 items-center gap-1.5 rounded-2xl bg-[#FFD166] px-4 font-display text-sm font-bold text-[#432B1D] md:hidden"
-          aria-label="Lompat"
-        >
-          <ChevronUp className="h-5 w-5" strokeWidth={2.75} />
-          Lompat
-        </button>
-      </div>
+      )}
     </div>
   );
 };

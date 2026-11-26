@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Backpack,
+  Award,
   Check,
   Clock,
   Crown,
@@ -45,7 +45,7 @@ const CATEGORY_TABS: {
   { id: 'hat', label: 'Topi', icon: Crown },
   { id: 'glasses', label: 'Kacamata', icon: Glasses },
   { id: 'shirt', label: 'Baju', icon: Shirt },
-  { id: 'bag', label: 'Tas', icon: Backpack },
+  { id: 'costume', label: 'Topeng & Seragam', icon: Award },
   { id: 'carpet', label: 'Karpet', icon: Layers },
   { id: 'booster', label: 'Booster', icon: Zap },
 ];
@@ -118,34 +118,62 @@ function ShopItemArtwork({ item }: { item: ShopItem }) {
           <path d="M25 18 Q32 25 39 18" fill="none" stroke="#432B1D" strokeWidth="2.5" />
         </svg>
       )}
-      {item.id === 'bag_boba' && (
+      {item.id === 'style_mask_cat' && (
         <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
-          <path d="M16 14 L26 26" stroke="#FF8FAB" strokeWidth="5" strokeLinecap="round" />
-          <path d="M22 26 L42 26 L38 52 L26 52 Z" fill="#F7D294" stroke="#432B1D" strokeWidth="3" strokeLinejoin="round" />
-          <rect x="20" y="22" width="24" height="6" rx="3" fill="#FF6B8B" stroke="#432B1D" strokeWidth="2.5" />
-          <line x1="34" y1="12" x2="32" y2="22" stroke="#432B1D" strokeWidth="4" strokeLinecap="round" />
-          <circle cx="29" cy="45" r="2.3" fill="#432B1D" />
-          <circle cx="35" cy="45" r="2.3" fill="#432B1D" />
-          <circle cx="32" cy="41" r="2.3" fill="#432B1D" />
-        </svg>
-      )}
-      {item.id === 'bag_strawberry' && (
-        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
-          <rect x="17" y="20" width="30" height="32" rx="12" fill="#FF5E78" stroke="#432B1D" strokeWidth="3" />
-          <path d="M22 20 Q32 11 42 20 Z" fill="#6BD47F" stroke="#432B1D" strokeWidth="2.5" />
-          <rect x="22" y="34" width="20" height="12" rx="5" fill="#FF8CA0" stroke="#432B1D" strokeWidth="2.5" />
-        </svg>
-      )}
-      {item.id === 'bag_star' && (
-        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
-          <path d="M14 14 L25 26" stroke="#8A5A3B" strokeWidth="4.5" strokeLinecap="round" />
-          <polygon
-            points="32,16 37,27 49,28 40,36 42,48 32,42 22,48 24,36 15,28 27,27"
-            fill="#FFD166"
+          <path
+            d="M12 28 L16 14 L26 24 L38 24 L48 14 L52 28 L49 42 Q32 46 15 42 Z"
+            fill="#7B2CBF"
             stroke="#432B1D"
-            strokeWidth="2.8"
+            strokeWidth="3"
             strokeLinejoin="round"
           />
+          <circle cx="22" cy="33" r="6" fill="#FFF8EE" stroke="#FFD166" strokeWidth="3" />
+          <circle cx="42" cy="33" r="6" fill="#FFF8EE" stroke="#FFD166" strokeWidth="3" />
+          <polygon points="32,25 35,30 32,35 29,30" fill="#FFD166" />
+        </svg>
+      )}
+      {item.id === 'style_mask_bunny' && (
+        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
+          <rect x="20" y="10" width="8" height="17" rx="4" fill="#FF6B8B" stroke="#432B1D" strokeWidth="2.5" />
+          <rect x="36" y="10" width="8" height="17" rx="4" fill="#FF6B8B" stroke="#432B1D" strokeWidth="2.5" />
+          <path
+            d="M10 34 Q18 22 32 28 Q46 22 54 34 Q49 46 37 42 Q32 39 27 42 Q15 46 10 34 Z"
+            fill="#FF6B8B"
+            stroke="#432B1D"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+          <circle cx="21" cy="34" r="5.5" fill="#FFF8EE" stroke="#FFF3B0" strokeWidth="2.8" />
+          <circle cx="43" cy="34" r="5.5" fill="#FFF8EE" stroke="#FFF3B0" strokeWidth="2.8" />
+        </svg>
+      )}
+      {item.id === 'style_uniform_sailor' && (
+        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
+          <path
+            d="M18 16 L8 26 L15 33 L19 29 L19 50 L45 50 L45 29 L49 33 L56 26 L46 16 L39 19 Q32 23 25 19 Z"
+            fill="#FFFAF0"
+            stroke="#432B1D"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+          <path d="M20 17 L32 33 L44 17 L39 19 Q32 24 25 19 Z" fill="#2B4C7E" stroke="#432B1D" strokeWidth="2.2" />
+          <circle cx="32" cy="31" r="4" fill="#E63946" stroke="#432B1D" strokeWidth="2" />
+          <path d="M24 29 L32 31 L24 34 Z M40 29 L32 31 L40 34 Z" fill="#E63946" />
+        </svg>
+      )}
+      {item.id === 'style_uniform_royal' && (
+        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
+          <path
+            d="M18 16 L8 26 L15 33 L19 29 L19 50 L45 50 L45 29 L49 33 L56 26 L46 16 L39 19 Q32 23 25 19 Z"
+            fill="#3A86FF"
+            stroke="#432B1D"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+          <line x1="21" y1="22" x2="43" y2="47" stroke="#F26B7A" strokeWidth="5" strokeLinecap="round" />
+          <circle cx="32" cy="27" r="2.3" fill="#FFD166" />
+          <circle cx="32" cy="35" r="2.3" fill="#FFD166" />
+          <circle cx="32" cy="43" r="2.3" fill="#FFD166" />
         </svg>
       )}
       {item.id === 'carpet_checker' && (
@@ -221,7 +249,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     if (item.category === 'hat') return charLoadout.hat === item.id;
     if (item.category === 'glasses') return charLoadout.glasses === item.id;
     if (item.category === 'shirt') return charLoadout.shirt === item.id;
-    if (item.category === 'bag') return charLoadout.bag === item.id;
+    if (item.category === 'costume') return charLoadout.costume === item.id;
     if (item.category === 'carpet') return saveStore.equippedCarpet === item.id;
     return false;
   };

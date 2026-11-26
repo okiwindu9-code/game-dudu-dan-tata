@@ -1,98 +1,120 @@
 /**
- * Security test suite specification for Dudu & Tata Firestore rules.
- * Covers the Dirty Dozen adversarial payloads against /users/{userId} and /rooms/{roomCode}.
+ * Dirty Dozen Firestore Security Rules Verification Matrix
+ * Documents adversarial payloads asserted to return PERMISSION_DENIED.
  */
 
-export const DIRTY_DOZEN_TESTS = [
+export interface SecurityAssertion {
+  id: number;
+  name: string;
+  operation: 'get' | 'list' | 'create' | 'update' | 'delete';
+  path: string;
+  actor: { uid: string | null; emailVerified: boolean };
+  payload?: Record<string, unknown>;
+  expected: 'PERMISSION_DENIED';
+}
+
+export const DIRTY_DOZEN_TESTS: SecurityAssertion[] = [
   {
-    name: '01. Unauthenticated access to /users/u1 is denied',
-    path: '/users/u1',
+    id: 1,
+    name: 'Unauthenticated read on private user profile',
     operation: 'get',
-    auth: null,
+    path: '/users/user_a',
+    actor: { uid: null, emailVerified: false },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '02. Unverified email user cannot create /users/u1',
-    path: '/users/u1',
-    operation: 'create',
-    auth: { uid: 'u1', token: { email_verified: false } },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    name: '03. Cross-user profile read is denied',
-    path: '/users/userA',
+    id: 2,
+    name: 'Cross-user read on private user profile',
     operation: 'get',
-    auth: { uid: 'userB', token: { email_verified: true } },
+    path: '/users/user_a',
+    actor: { uid: 'user_b', emailVerified: true },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '04. Profile UID spoofing is denied',
-    path: '/users/userA',
-    operation: 'create',
-    auth: { uid: 'userA', token: { email_verified: true } },
-    payload: { uid: 'userB' },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    name: '05. Shadow field injection (isAdmin: true) is denied',
-    path: '/users/userA',
-    operation: 'create',
-    auth: { uid: 'userA', token: { email_verified: true } },
-    payload: { uid: 'userA', isAdmin: true },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    name: '06. Negative balance poisoning is denied',
-    path: '/users/userA',
+    id: 3,
+    name: 'Mutation of immutable playerCode once assigned',
     operation: 'update',
-    auth: { uid: 'userA', token: { email_verified: true } },
-    payload: { rupiahBalance: -50000 },
+    path: '/users/user_a',
+    actor: { uid: 'user_a', emailVerified: true },
+    payload: { playerCode: '999999' },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '07. Collection list scraping on /rooms is denied',
-    path: '/rooms',
+    id: 4,
+    name: 'Directory scraping via list query on playerDirectory',
     operation: 'list',
-    auth: { uid: 'userA', token: { email_verified: true } },
+    path: '/playerDirectory',
+    actor: { uid: 'user_a', emailVerified: true },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '08. Invalid room code ID is denied',
-    path: '/rooms/invalid_room_id',
+    id: 5,
+    name: 'Identity spoofing in playerDirectory entry',
     operation: 'create',
-    auth: { uid: 'userA', token: { email_verified: true } },
+    path: '/playerDirectory/654321',
+    actor: { uid: 'user_b', emailVerified: true },
+    payload: { playerCode: '654321', uid: 'user_a' },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '09. Creating a room already in finished status is denied',
-    path: '/rooms/DT1234',
-    operation: 'create',
-    auth: { uid: 'userA', token: { email_verified: true } },
+    id: 6,
+    name: 'Non-participant reading private match document',
+    operation: 'get',
+    path: '/matches/M_TEST_01',
+    actor: { uid: 'user_c', emailVerified: true },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 7,
+    name: 'Unscoped list query on matches collection',
+    operation: 'list',
+    path: '/matches',
+    actor: { uid: 'user_a', emailVerified: true },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 8,
+    name: 'State shortcutting from invited straight to finished',
+    operation: 'update',
+    path: '/matches/M_TEST_01',
+    actor: { uid: 'user_a', emailVerified: true },
     payload: { status: 'finished' },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '10. Player 2 cannot submit Player 1 turn result',
-    path: '/rooms/DT1234',
+    id: 9,
+    name: 'Player 2 hijacking Player 1 liveState stream',
     operation: 'update',
-    auth: { uid: 'userB', token: { email_verified: true } },
-    payload: { status: 'player2_turn', player1Result: { score: 999 } },
+    path: '/matches/M_TEST_01',
+    actor: { uid: 'user_b', emailVerified: true },
+    payload: { liveState: { turnUid: 'user_b', score: 9999 } },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '11. Mutating room after status is finished is denied',
-    path: '/rooms/DT1234',
+    id: 10,
+    name: 'Shadow ghost field injection on TurnMatch update',
     operation: 'update',
-    auth: { uid: 'userA', token: { email_verified: true } },
-    payload: { winnerUid: 'userA' },
+    path: '/matches/M_TEST_01',
+    actor: { uid: 'user_a', emailVerified: true },
+    payload: { adminBonus: 9999 },
     expected: 'PERMISSION_DENIED',
   },
   {
-    name: '12. Client-forged timestamp different from request.time is denied',
-    path: '/rooms/DT1234',
-    operation: 'create',
-    auth: { uid: 'userA', token: { email_verified: true } },
-    payload: { createdAt: '2020-01-01T00:00:00Z' },
+    id: 11,
+    name: 'Client-forged timestamp on TurnMatch update',
+    operation: 'update',
+    path: '/matches/M_TEST_01',
+    actor: { uid: 'user_a', emailVerified: true },
+    payload: { updatedAt: '2026-01-01T00:00:00Z' },
     expected: 'PERMISSION_DENIED',
   },
-] as const;
+  {
+    id: 12,
+    name: 'Post-terminal modification of finished match',
+    operation: 'update',
+    path: '/matches/M_TEST_FINISHED',
+    actor: { uid: 'user_b', emailVerified: true },
+    payload: { winnerUid: 'user_b' },
+    expected: 'PERMISSION_DENIED',
+  },
+];

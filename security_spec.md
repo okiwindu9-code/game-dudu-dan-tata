@@ -1,28 +1,22 @@
-# Security Specification — Dudu & Tata 2.5D
+# Security Specification — Dudu & Tata Cloud Profile, Player ID Directory & Live Turn-Based Mabar
 
 ## 1. Data Invariants
-1. **UserProfile (`/users/{userId}`)**:
-   - Can only be read (`get`), created, or updated by the verified authenticated owner (`request.auth.uid == userId && request.auth.token.email_verified == true`).
-   - Collection listing (`list`) and deletion (`delete`) are strictly denied.
-   - `uid` and `createdAt` are immutable; `updatedAt` must equal `request.time`.
-   - All numeric scores, point balances, Rupiah balances, and booster counts are non-negative integers within strict bounds.
-2. **TurnRoom (`/rooms/{roomCode}`)**:
-   - `roomCode` must be an exact 6-character uppercase alphanumeric ID (`^[A-Z0-9]{6}$`).
-   - Collection listing (`list`) is strictly denied; rooms are fetched directly by exact `roomCode`.
-   - Room creation requires `status == 'waiting'`, `player1Uid == request.auth.uid`, and `null` for `player2*`, results, and `winnerUid`.
-   - State transitions are strictly linear: `waiting` -> `player1_turn` (only on `joinRoom`) -> `player2_turn` (only by `player1Uid`) -> `finished` (only by `player2Uid`).
-   - Terminal State Locking: Once `status == 'finished'`, no further updates are permitted.
+1. **Owner-Only Profile & Immutable Player ID**: Only the verified owner (`request.auth.uid == userId && email_verified == true`) can read/create/update `/users/{userId}`. Once `playerCode` (`^[0-9]{6}$`) is assigned, it cannot be changed.
+2. **PII Isolation via Split Public Directory**: Emails, Rupiah balances, and item inventories stay strictly private inside `/users/{userId}`. `/playerDirectory/{playerCode}` exposes only public display cards (`playerCode`, `uid`, `displayName`, `photoURL`, `preferredChar`, `duduBest`, `tataBest`) and forbids `list` queries so players cannot scrape the full directory.
+3. **Participant-Only Match Access & Safe Invite Inbox**: `/matches/{matchId}` `get` is strictly restricted to `player1Uid` or `player2Uid`. `list` is restricted to `resource.data.player2Uid == request.auth.uid` so invited players receive real-time invites without scraping other users' matches.
+4. **Turn-Based Live Stream Authority**: Only `player1Uid` may write `liveState` during `player1_turn` (and transition to `player2_turn` with `player1Result`), and only `player2Uid` may write `liveState` during `player2_turn` (and transition to `finished` with `player2Result` and `winnerUid`).
+5. **Terminal State Locking**: Once a match reaches `finished` or `declined`, no further updates are permitted.
 
-## 2. The "Dirty Dozen" Payloads (Expected: PERMISSION_DENIED)
-1. **Unauthenticated read/write** on `/users/u1` or `/rooms/ABC123`.
-2. **Unverified email** (`email_verified: false`) attempting to create `/users/u1`.
-3. **Cross-user profile read/write**: User B reading or writing `/users/userA`.
-4. **Profile UID spoofing**: User A creating `/users/userA` with `uid: "userB"`.
-5. **Shadow field injection**: Creating `/users/userA` with an extra `isAdmin: true` field.
-6. **Negative Rupiah / Points poisoning**: Updating `/users/userA` with `rupiahBalance: -50000`.
-7. **Collection scraping**: Calling `list` (`getDocs(collection(db, 'users'))` or `collection(db, 'rooms')`).
-8. **Invalid room ID poisoning**: Creating `/rooms/invalid_long_id_123456`.
-9. **State shortcutting**: Creating `/rooms/ABC123` directly with `status: 'finished'`.
-10. **Turn hijacking**: User B submitting `player1Result` while `status == 'player1_turn'` and `player1Uid == userA`.
-11. **Post-finished mutation**: Modifying `player1Result` or `winnerUid` after `status == 'finished'`.
-12. **Client timestamp forgery**: Creating or updating a document with a backdated `updatedAt` instead of `serverTimestamp()`.
+## 2. "Dirty Dozen" Adversarial Payloads (Must All Return PERMISSION_DENIED)
+1. Unauthenticated `get` on `/users/uid_A`.
+2. Verified User B `get` or `update` on `/users/uid_A`.
+3. Verified User A updating `playerCode` on `/users/uid_A` after it is already set.
+4. Verified User A `list` on `/playerDirectory` to scrape all player IDs.
+5. Verified User B creating `/playerDirectory/123456` with `uid: "uid_A"` (identity spoofing).
+6. Verified User C `get` on `/matches/M_123` where C is neither `player1Uid` nor `player2Uid`.
+7. Verified User A `list` on `/matches` without filtering `player2Uid == auth.uid`.
+8. Verified User A (`player1`) updating `status: 'finished'` during `'invited'` (state shortcutting).
+9. Verified User B (`player2`) writing `liveState` during `'player1_turn'` (turn hijacking).
+10. Verified User A (`player1`) injecting a ghost field `adminBonus: 9999` during `liveState` stream (`affectedKeys().hasOnly(...)` guard).
+11. Verified User A forging `updatedAt` with a client timestamp instead of `request.time`.
+12. Verified User B updating a match after `status == 'finished'` (terminal state breach).

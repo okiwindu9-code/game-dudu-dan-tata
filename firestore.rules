@@ -10,8 +10,8 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function isValidRoomCode(code) {
-      return code is string && code.size() == 6 && code.matches('^[A-Z0-9]{6}$');
+    function isValidPlayerCode(code) {
+      return code is string && code.size() == 6 && code.matches('^[0-9]{6}$');
     }
 
     function incoming() {
@@ -36,17 +36,17 @@ service cloud.firestore {
 
     function isValidEquipLoadout(eq) {
       return eq is map
-        && eq.keys().hasAll(['hat', 'glasses', 'shirt', 'bag'])
-        && eq.keys().hasOnly(['hat', 'glasses', 'shirt', 'bag'])
+        && eq.keys().hasAll(['hat', 'glasses', 'shirt', 'costume'])
+        && eq.keys().hasOnly(['hat', 'glasses', 'shirt', 'costume'])
         && (eq.hat == null || (eq.hat is string && eq.hat.size() <= 40))
         && (eq.glasses == null || (eq.glasses is string && eq.glasses.size() <= 40))
         && (eq.shirt == null || (eq.shirt is string && eq.shirt.size() <= 40))
-        && (eq.bag == null || (eq.bag is string && eq.bag.size() <= 40));
+        && (eq.costume == null || (eq.costume is string && eq.costume.size() <= 40));
     }
 
     function isValidUserProfile(data, userId) {
       return data.keys().hasAll([
-          'uid', 'displayName', 'photoURL',
+          'uid', 'playerCode', 'displayName', 'photoURL',
           'tataBest', 'duduBest', 'bestCombo',
           'totalPoints', 'rupiahBalance', 'exchangeCount',
           'ownedItems', 'equippedByChar', 'equippedCarpet',
@@ -54,7 +54,7 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'uid', 'displayName', 'photoURL',
+          'uid', 'playerCode', 'displayName', 'photoURL',
           'tataBest', 'duduBest', 'bestCombo',
           'totalPoints', 'rupiahBalance', 'exchangeCount',
           'ownedItems', 'equippedByChar', 'equippedCarpet',
@@ -63,6 +63,7 @@ service cloud.firestore {
         ])
         && data.uid == userId
         && isValidId(data.uid)
+        && isValidPlayerCode(data.playerCode)
         && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40
         && data.photoURL is string && data.photoURL.size() <= 512
         && data.tataBest is int && data.tataBest >= 0 && data.tataBest <= 10000000
@@ -93,6 +94,26 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidDirectoryEntry(data, playerCode) {
+      return data.keys().hasAll([
+          'playerCode', 'uid', 'displayName', 'photoURL',
+          'preferredChar', 'duduBest', 'tataBest', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'playerCode', 'uid', 'displayName', 'photoURL',
+          'preferredChar', 'duduBest', 'tataBest', 'updatedAt'
+        ])
+        && data.playerCode == playerCode
+        && isValidPlayerCode(data.playerCode)
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40
+        && data.photoURL is string && data.photoURL.size() <= 512
+        && data.preferredChar in ['dudu', 'tata']
+        && data.duduBest is int && data.duduBest >= 0 && data.duduBest <= 10000000
+        && data.tataBest is int && data.tataBest >= 0 && data.tataBest <= 10000000
+        && data.updatedAt is timestamp;
+    }
+
     function isValidTurnResult(res) {
       return res is map
         && res.keys().hasAll(['score', 'maxCombo', 'itemsCaught', 'hazardsHit', 'livesLeft', 'durationUsed'])
@@ -105,31 +126,74 @@ service cloud.firestore {
         && res.durationUsed is int && res.durationUsed >= 0 && res.durationUsed <= 300;
     }
 
-    function isValidTurnRoom(data, roomCode) {
+    function isValidLiveState(ls) {
+      return ls is map
+        && ls.keys().hasAll([
+          'turnUid', 'charId', 'x', 'y', 'vx',
+          'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
+          'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
+        ])
+        && ls.keys().hasOnly([
+          'turnUid', 'charId', 'x', 'y', 'vx',
+          'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
+          'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
+        ])
+        && isValidId(ls.turnUid)
+        && ls.charId in ['dudu', 'tata']
+        && ls.x is number && ls.x >= -15 && ls.x <= 15
+        && ls.y is number && ls.y >= -1 && ls.y <= 15
+        && ls.vx is number && ls.vx >= -40 && ls.vx <= 40
+        && ls.score is int && ls.score >= 0 && ls.score <= 10000000
+        && ls.timeLeft is int && ls.timeLeft >= 0 && ls.timeLeft <= 300
+        && ls.lives is int && ls.lives >= 0 && ls.lives <= 3
+        && ls.combo is int && ls.combo >= 0 && ls.combo <= 10000
+        && ls.maxCombo is int && ls.maxCombo >= 0 && ls.maxCombo <= 10000
+        && ls.itemsCaught is int && ls.itemsCaught >= 0 && ls.itemsCaught <= 10000
+        && ls.feverActive is bool
+        && ls.seq is int && ls.seq >= 0 && ls.seq <= 1000000
+        && ls.eventLabel is string && ls.eventLabel.size() <= 40
+        && ls.items is list && ls.items.size() <= 14
+        && (ls.items.size() == 0 || (
+          ls.items[0] is map
+          && ls.items[0].keys().hasAll(['id', 'type', 'x', 'y'])
+          && ls.items[0].keys().hasOnly(['id', 'type', 'x', 'y'])
+          && ls.items[0].id is int
+          && ls.items[0].type is string && ls.items[0].type.size() <= 20
+          && ls.items[0].x is number
+          && ls.items[0].y is number
+        ));
+    }
+
+    function isValidTurnMatch(data, matchId) {
       return data.keys().hasAll([
-          'roomCode', 'durationSec', 'status',
-          'player1Uid', 'player1Name', 'player1Char',
-          'player2Uid', 'player2Name', 'player2Char',
-          'player1Result', 'player2Result', 'winnerUid',
+          'matchId', 'durationSec', 'status',
+          'player1Uid', 'player1Code', 'player1Name', 'player1Char', 'player1Photo',
+          'player2Uid', 'player2Code', 'player2Name', 'player2Char', 'player2Photo',
+          'liveState', 'player1Result', 'player2Result', 'winnerUid',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'roomCode', 'durationSec', 'status',
-          'player1Uid', 'player1Name', 'player1Char',
-          'player2Uid', 'player2Name', 'player2Char',
-          'player1Result', 'player2Result', 'winnerUid',
+          'matchId', 'durationSec', 'status',
+          'player1Uid', 'player1Code', 'player1Name', 'player1Char', 'player1Photo',
+          'player2Uid', 'player2Code', 'player2Name', 'player2Char', 'player2Photo',
+          'liveState', 'player1Result', 'player2Result', 'winnerUid',
           'createdAt', 'updatedAt'
         ])
-        && data.roomCode == roomCode
-        && isValidRoomCode(data.roomCode)
+        && data.matchId == matchId
+        && isValidId(data.matchId)
         && data.durationSec is int && data.durationSec in [45, 60, 90]
-        && data.status in ['waiting', 'player1_turn', 'player2_turn', 'finished']
+        && data.status in ['invited', 'player1_turn', 'player2_turn', 'finished', 'declined']
         && isValidId(data.player1Uid)
+        && isValidPlayerCode(data.player1Code)
         && data.player1Name is string && data.player1Name.size() >= 1 && data.player1Name.size() <= 40
         && data.player1Char in ['dudu', 'tata']
-        && (data.player2Uid == null || (data.player2Uid is string && isValidId(data.player2Uid)))
-        && (data.player2Name == null || (data.player2Name is string && data.player2Name.size() >= 1 && data.player2Name.size() <= 40))
-        && (data.player2Char == null || data.player2Char in ['dudu', 'tata'])
+        && data.player1Photo is string && data.player1Photo.size() <= 512
+        && isValidId(data.player2Uid)
+        && isValidPlayerCode(data.player2Code)
+        && data.player2Name is string && data.player2Name.size() >= 1 && data.player2Name.size() <= 40
+        && data.player2Char in ['dudu', 'tata']
+        && data.player2Photo is string && data.player2Photo.size() <= 512
+        && (data.liveState == null || isValidLiveState(data.liveState))
         && (data.player1Result == null || isValidTurnResult(data.player1Result))
         && (data.player2Result == null || isValidTurnResult(data.player2Result))
         && (data.winnerUid == null || (data.winnerUid is string && data.winnerUid.size() >= 1 && data.winnerUid.size() <= 128))
@@ -149,10 +213,11 @@ service cloud.firestore {
         && isOwner(userId)
         && isValidUserProfile(incoming(), userId)
         && incoming().uid == existing().uid
+        && (!existing().keys().hasAny(['playerCode']) || incoming().playerCode == existing().playerCode)
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'displayName', 'photoURL',
+          'playerCode', 'displayName', 'photoURL',
           'tataBest', 'duduBest', 'bestCombo',
           'totalPoints', 'rupiahBalance', 'exchangeCount',
           'ownedItems', 'equippedByChar', 'equippedCarpet',
@@ -161,79 +226,132 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /rooms/{roomCode} {
-      allow get: if isValidRoomCode(roomCode) && isVerifiedUser();
+    match /playerDirectory/{playerCode} {
+      allow get: if isValidPlayerCode(playerCode) && isVerifiedUser();
       allow list: if false;
-      allow create: if isValidRoomCode(roomCode)
+      allow create: if isValidPlayerCode(playerCode)
         && isVerifiedUser()
-        && isValidTurnRoom(incoming(), roomCode)
+        && isValidDirectoryEntry(incoming(), playerCode)
+        && incoming().uid == request.auth.uid
+        && incoming().updatedAt == request.time;
+      allow update: if isValidPlayerCode(playerCode)
+        && isVerifiedUser()
+        && existing().uid == request.auth.uid
+        && isValidDirectoryEntry(incoming(), playerCode)
+        && incoming().uid == existing().uid
+        && incoming().playerCode == existing().playerCode
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'preferredChar', 'duduBest', 'tataBest', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /matches/{matchId} {
+      allow get: if isValidId(matchId)
+        && isVerifiedUser()
+        && (existing().player1Uid == request.auth.uid || existing().player2Uid == request.auth.uid);
+      allow list: if isVerifiedUser() && resource.data.player2Uid == request.auth.uid;
+      allow create: if isValidId(matchId)
+        && isVerifiedUser()
+        && isValidTurnMatch(incoming(), matchId)
         && incoming().player1Uid == request.auth.uid
-        && incoming().status == 'waiting'
-        && incoming().player2Uid == null
-        && incoming().player2Name == null
-        && incoming().player2Char == null
+        && incoming().status == 'invited'
+        && incoming().liveState == null
         && incoming().player1Result == null
         && incoming().player2Result == null
         && incoming().winnerUid == null
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isValidRoomCode(roomCode)
+      allow update: if isValidId(matchId)
         && isVerifiedUser()
-        && isValidTurnRoom(incoming(), roomCode)
+        && isValidTurnMatch(incoming(), matchId)
         && existing().status != 'finished'
-        && incoming().roomCode == existing().roomCode
+        && existing().status != 'declined'
+        && incoming().matchId == existing().matchId
         && incoming().durationSec == existing().durationSec
         && incoming().player1Uid == existing().player1Uid
+        && incoming().player1Code == existing().player1Code
         && incoming().player1Name == existing().player1Name
         && incoming().player1Char == existing().player1Char
+        && incoming().player1Photo == existing().player1Photo
+        && incoming().player2Uid == existing().player2Uid
+        && incoming().player2Code == existing().player2Code
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action 1: Player 2 joins waiting room -> advances to player1_turn
+          // Action 1: Invited Player 2 accepts invite -> immediately enters Player 1 live turn
           (
-            existing().status == 'waiting'
-            && existing().player2Uid == null
+            existing().status == 'invited'
+            && request.auth.uid == existing().player2Uid
             && incoming().status == 'player1_turn'
-            && incoming().player2Uid == request.auth.uid
-            && incoming().player2Name != null
-            && incoming().player2Char != null
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'player2Uid', 'player2Name', 'player2Char', 'status', 'updatedAt'
+              'player2Name', 'player2Char', 'player2Photo', 'status', 'updatedAt'
             ])
           )
           ||
-          // Action 2: Player 1 submits turn result -> advances to player2_turn
+          // Action 2: Invited Player 2 or Host Player 1 cancels/declines invite
+          (
+            existing().status == 'invited'
+            && (request.auth.uid == existing().player2Uid || request.auth.uid == existing().player1Uid)
+            && incoming().status == 'declined'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          ||
+          // Action 3: Player 1 streams live gameplay state while Player 2 watches in 3D arena
+          (
+            existing().status == 'player1_turn'
+            && request.auth.uid == existing().player1Uid
+            && incoming().status == 'player1_turn'
+            && incoming().liveState != null
+            && incoming().liveState.turnUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['liveState', 'updatedAt'])
+          )
+          ||
+          // Action 4: Player 1 finishes turn -> hands over turn to Player 2
           (
             existing().status == 'player1_turn'
             && request.auth.uid == existing().player1Uid
             && incoming().status == 'player2_turn'
             && incoming().player1Result != null
             && incoming().player2Result == null
+            && incoming().liveState == null
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'player1Result', 'status', 'updatedAt'
+              'player1Result', 'liveState', 'status', 'updatedAt'
             ])
           )
           ||
-          // Action 3: Player 2 submits turn result -> advances to finished with winner
+          // Action 5: Player 2 streams live gameplay state while Player 1 watches in 3D arena
+          (
+            existing().status == 'player2_turn'
+            && request.auth.uid == existing().player2Uid
+            && incoming().status == 'player2_turn'
+            && incoming().liveState != null
+            && incoming().liveState.turnUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['liveState', 'updatedAt'])
+          )
+          ||
+          // Action 6: Player 2 finishes turn -> closes match and records winner
           (
             existing().status == 'player2_turn'
             && request.auth.uid == existing().player2Uid
             && incoming().status == 'finished'
             && incoming().player2Result != null
+            && incoming().liveState == null
             && (
               incoming().winnerUid == 'draw'
               || incoming().winnerUid == existing().player1Uid
               || incoming().winnerUid == existing().player2Uid
             )
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'player2Result', 'winnerUid', 'status', 'updatedAt'
+              'player2Result', 'winnerUid', 'liveState', 'status', 'updatedAt'
             ])
           )
         );
-      allow delete: if isValidRoomCode(roomCode)
+      allow delete: if isValidId(matchId)
         && isVerifiedUser()
         && existing().player1Uid == request.auth.uid
-        && existing().status == 'waiting';
+        && existing().status == 'invited';
     }
   }
 }

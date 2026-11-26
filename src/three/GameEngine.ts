@@ -12,6 +12,7 @@ import {
   GamePhase,
   HudSnapshot,
   InGameDuration,
+  LiveMatchState,
   MAX_PLAYER_LIVES,
   TIME_MODES,
 } from '../types/game';
@@ -47,6 +48,7 @@ export interface EngineCallbacks {
   onGameOver: (finalHud: HudSnapshot) => void;
   onLivesDepleted?: (finalHud: HudSnapshot) => void;
   onHazardHit?: () => void;
+  onLiveFrame?: (frame: Omit<LiveMatchState, 'turnUid'>) => void;
 }
 
 // Reusable math objects (zero per-frame GC)
@@ -127,6 +129,28 @@ export class GameEngine {
   private lastTickSecond = 6;
   private speedBoosterActive = false;
   private speedTrailTimer = 0;
+
+  // Live Multiplayer Stream & 3D Spectator state
+  private streamLiveEnabled = false;
+  private lastLivePush = 0;
+  private liveSeq = 0;
+  private pendingEventLabel = '';
+  private remoteTargetX = 0;
+  private remoteTargetY = 0;
+  private remoteTargetVx = 0;
+  private lastRemoteSeq = -1;
+  private remoteItems = new Map<
+    number,
+    {
+      type: CollectibleType;
+      mesh: THREE.Group;
+      shadow: THREE.Mesh;
+      x: number;
+      y: number;
+      targetX: number;
+      targetY: number;
+    }
+  >();
 
   // Camera smooth targets
   private camLookAt = new THREE.Vector3(0, 1.5, 0);
@@ -329,12 +353,19 @@ export class GameEngine {
     characterId: CharacterId,
     durationMode: InGameDuration,
     activeBoosters: ActiveBoosters = { speedBoost: false, time2xBoost: false },
+    options: { streamLive?: boolean } = {},
   ) {
     soundEngine.unlock();
     this.activeCharacter = characterId;
     this.durationMode = durationMode;
     this.clearItems();
+    this.clearRemoteItems();
     this.particles.clear();
+
+    this.streamLiveEnabled = Boolean(options.streamLive);
+    this.lastLivePush = 0;
+    this.liveSeq = 0;
+    this.pendingEventLabel = '';
 
     const cfg = TIME_MODES[durationMode];
     this.score = 0;
@@ -379,6 +410,138 @@ export class GameEngine {
     this.phase = 'playing';
     soundEngine.startBgm(false);
     this.pushHud(true);
+    this.emitLiveSnapshot(true);
+  }
+
+  public startSpectating(characterId: CharacterId, durationSec: number) {
+    this.activeCharacter = characterId;
+    this.streamLiveEnabled = false;
+    this.clearItems();
+    this.clearRemoteItems();
+    this.particles.clear();
+
+    this.playerX = 0;
+    this.playerY = 0;
+    this.playerVx = 0;
+    this.remoteTargetX = 0;
+    this.remoteTargetY = 0;
+    this.remoteTargetVx = 0;
+    this.lastRemoteSeq = -1;
+    this.score = 0;
+    this.timeLeft = durationSec;
+    this.lives = MAX_PLAYER_LIVES;
+    this.combo = 0;
+    this.maxCombo = 0;
+    this.feverActive = false;
+    this.itemsCaught = 0;
+
+    const activeRig = this.getActiveRig();
+    const partnerRig = this.getPartnerRig();
+    activeRig.root.position.set(0, 0, 0);
+    activeRig.root.rotation.set(0, 0, 0);
+    activeRig.root.scale.setScalar(1);
+
+    partnerRig.root.position.copy(this.env.picnicSpot);
+    partnerRig.root.rotation.set(0, -0.35, 0);
+    partnerRig.root.scale.setScalar(0.86);
+
+    this.env.spotlightRing.visible = false;
+    this.phase = 'spectating';
+    soundEngine.stopBgm();
+  }
+
+  public applyRemoteLiveState(frame: LiveMatchState) {
+    if (this.phase !== 'spectating') return;
+
+    if (this.activeCharacter !== frame.charId) {
+      this.activeCharacter = frame.charId;
+      const activeRig = this.getActiveRig();
+      const partnerRig = this.getPartnerRig();
+      activeRig.root.position.set(frame.x, frame.y, 0);
+      activeRig.root.rotation.set(0, 0, 0);
+      activeRig.root.scale.setScalar(1);
+      partnerRig.root.position.copy(this.env.picnicSpot);
+      partnerRig.root.rotation.set(0, -0.35, 0);
+      partnerRig.root.scale.setScalar(0.86);
+    }
+
+    this.remoteTargetX = frame.x;
+    this.remoteTargetY = frame.y;
+    this.remoteTargetVx = frame.vx;
+    this.score = frame.score;
+    this.timeLeft = frame.timeLeft;
+    this.lives = frame.lives;
+    this.combo = frame.combo;
+    this.maxCombo = frame.maxCombo;
+    this.itemsCaught = frame.itemsCaught;
+    this.feverActive = frame.feverActive;
+
+    // React visually to remote catch / hazard events
+    if (frame.seq > this.lastRemoteSeq) {
+      const isFirstSync = this.lastRemoteSeq === -1;
+      this.lastRemoteSeq = frame.seq;
+      if (!isFirstSync && frame.eventLabel) {
+        const rig = this.getActiveRig();
+        const isBomb = frame.eventLabel.includes('Nyawa');
+        if (isBomb) {
+          rig.dizzyTimer = 0.65;
+          triggerSquash(rig, -4.0);
+          this.cameraShake = 0.95;
+          this.particles.burst(frame.x, frame.y + 1.0, 0.2, 0x3b302a, 14, true);
+          this.emitPopup(frame.x, frame.y + 1.7, frame.eventLabel, 'hazard');
+        } else {
+          rig.happyTimer = 0.45;
+          triggerSquash(rig, 2.4);
+          this.particles.burst(frame.x, frame.y + 1.1, 0.2, 0xffd166, 10, false);
+          this.emitPopup(
+            frame.x,
+            frame.y + 1.7,
+            frame.eventLabel,
+            frame.eventLabel.includes('PESTA') ? 'fever' : 'points',
+          );
+        }
+      }
+    }
+
+    // Reconcile live falling items
+    const incomingIds = new Set<number>();
+    for (const remoteItem of frame.items) {
+      incomingIds.add(remoteItem.id);
+      const existing = this.remoteItems.get(remoteItem.id);
+      if (existing) {
+        existing.targetX = remoteItem.x;
+        existing.targetY = remoteItem.y;
+      } else {
+        const mesh = this.collectibleFactory.createMesh(remoteItem.type);
+        const info = COLLECTIBLE_INFO[remoteItem.type];
+        const shadow = this.collectibleFactory.createShadowMarker(info.isHazard);
+        mesh.position.set(remoteItem.x, remoteItem.y, 0);
+        shadow.position.set(remoteItem.x, 0.02, 0);
+        this.scene.add(mesh, shadow);
+        this.remoteItems.set(remoteItem.id, {
+          type: remoteItem.type,
+          mesh,
+          shadow,
+          x: remoteItem.x,
+          y: remoteItem.y,
+          targetX: remoteItem.x,
+          targetY: remoteItem.y,
+        });
+      }
+    }
+
+    for (const [id, entry] of this.remoteItems.entries()) {
+      if (!incomingIds.has(id)) {
+        const info = COLLECTIBLE_INFO[entry.type];
+        if (entry.y > 0.7) {
+          this.particles.burst(entry.x, entry.y, 0.15, info.color, 8, info.isHazard);
+        }
+        this.scene.remove(entry.mesh);
+        this.scene.remove(entry.shadow);
+        (entry.shadow.material as THREE.Material).dispose();
+        this.remoteItems.delete(id);
+      }
+    }
   }
 
   public setPaused(paused: boolean) {
@@ -394,7 +557,9 @@ export class GameEngine {
 
   public returnToMenu() {
     soundEngine.stopBgm();
+    this.streamLiveEnabled = false;
     this.clearItems();
+    this.clearRemoteItems();
     this.particles.clear();
     this.phase = 'menu';
     this.feverActive = false;
@@ -420,6 +585,46 @@ export class GameEngine {
       (item.shadow.material as THREE.Material).dispose();
     }
     this.items.length = 0;
+  }
+
+  private clearRemoteItems() {
+    for (const entry of this.remoteItems.values()) {
+      this.scene.remove(entry.mesh);
+      this.scene.remove(entry.shadow);
+      (entry.shadow.material as THREE.Material).dispose();
+    }
+    this.remoteItems.clear();
+  }
+
+  private emitLiveSnapshot(force = false) {
+    if (!this.streamLiveEnabled || !this.callbacks.onLiveFrame) return;
+    if (!force && this.elapsed - this.lastLivePush < 0.19) return;
+    this.lastLivePush = this.elapsed;
+
+    const eventLabel = this.pendingEventLabel;
+    this.pendingEventLabel = '';
+
+    this.callbacks.onLiveFrame({
+      charId: this.activeCharacter,
+      x: this.playerX,
+      y: this.playerY,
+      vx: this.playerVx,
+      score: this.score,
+      timeLeft: Math.max(0, Math.ceil(this.timeLeft)),
+      lives: this.lives,
+      combo: this.combo,
+      maxCombo: this.maxCombo,
+      itemsCaught: this.itemsCaught,
+      feverActive: this.feverActive,
+      seq: this.liveSeq,
+      eventLabel,
+      items: this.items.slice(0, 14).map((it) => ({
+        id: it.id,
+        type: it.type,
+        x: it.x,
+        y: it.y,
+      })),
+    });
   }
 
   private pickRandomCollectibleType(): CollectibleType {
@@ -812,6 +1017,79 @@ export class GameEngine {
     this.camera.lookAt(this.camLookAt);
 
     this.pushHud(false);
+    this.emitLiveSnapshot(false);
+  }
+
+  private updateSpectating(dt: number) {
+    const activeRig = this.getActiveRig();
+    const partnerRig = this.getPartnerRig();
+
+    // Smooth extrapolation + damping between ~200ms network snapshots
+    const laneHalf = this.getLaneHalfWidth();
+    this.remoteTargetX = THREE.MathUtils.clamp(
+      this.remoteTargetX + this.remoteTargetVx * dt * 0.45,
+      -laneHalf,
+      laneHalf,
+    );
+
+    this.playerX = THREE.MathUtils.damp(this.playerX, this.remoteTargetX, 14, dt);
+    this.playerY = THREE.MathUtils.damp(this.playerY, this.remoteTargetY, 16, dt);
+    this.playerVx = THREE.MathUtils.damp(this.playerVx, this.remoteTargetVx, 12, dt);
+
+    activeRig.root.position.set(this.playerX, this.playerY, 0);
+    animateCharacter(activeRig, dt, this.elapsed, {
+      vx: this.playerVx,
+      vy: 0,
+      isGrounded: this.playerY < 0.08,
+    });
+
+    animateCharacter(partnerRig, dt, this.elapsed, {
+      vx: 0,
+      vy: 0,
+      isGrounded: true,
+      isCheering: true,
+    });
+
+    for (const entry of this.remoteItems.values()) {
+      entry.targetY -= 4.2 * dt;
+      entry.x = THREE.MathUtils.damp(entry.x, entry.targetX, 12, dt);
+      entry.y = THREE.MathUtils.damp(entry.y, entry.targetY, 12, dt);
+      entry.mesh.position.set(entry.x, entry.y, 0);
+      entry.mesh.rotation.y += 1.6 * dt;
+      entry.shadow.position.x = entry.x;
+      const hNorm = THREE.MathUtils.clamp(1 - entry.y / 11, 0.15, 1);
+      entry.shadow.scale.setScalar(0.45 + hNorm * 0.75);
+      (entry.shadow.material as THREE.MeshBasicMaterial).opacity = 0.08 + hNorm * 0.25;
+    }
+
+    this.cameraShake = Math.max(0, this.cameraShake - dt * 2.8);
+    const shakeX = (Math.random() - 0.5) * this.cameraShake * 0.35;
+    const shakeY = (Math.random() - 0.5) * this.cameraShake * 0.35;
+
+    const aspect = Math.max(0.42, this.camera.aspect || 1);
+    const isPortrait = aspect < 1.0;
+    const playCamZ = isPortrait
+      ? THREE.MathUtils.clamp(11.6 / aspect, 15.6, 22.8)
+      : 14.8;
+    const playCamY = isPortrait ? 5.1 : 4.7;
+    const followWeight = isPortrait ? 0.45 : 0.22;
+
+    const targetCamX = this.playerX * followWeight;
+    this.camera.position.x =
+      THREE.MathUtils.damp(this.camera.position.x, targetCamX, 5, dt) + shakeX;
+    this.camera.position.y =
+      THREE.MathUtils.damp(this.camera.position.y, playCamY, 5, dt) + shakeY;
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, playCamZ, 5, dt);
+
+    this.camLookAt.x = THREE.MathUtils.damp(this.camLookAt.x, targetCamX * 0.65, 6, dt);
+    this.camLookAt.y = THREE.MathUtils.damp(
+      this.camLookAt.y,
+      isPortrait ? 2.85 : 2.45,
+      6,
+      dt,
+    );
+    this.camLookAt.z = THREE.MathUtils.damp(this.camLookAt.z, 0, 6, dt);
+    this.camera.lookAt(this.camLookAt);
   }
 
   private handleCatch(item: FallingItem): boolean {
@@ -834,7 +1112,10 @@ export class GameEngine {
       this.emitPopup(item.x, item.y + 0.8, `-1 Nyawa!`, 'hazard');
       soundEngine.playHazard();
       this.callbacks.onHazardHit?.();
+      this.liveSeq += 1;
+      this.pendingEventLabel = '-1 Nyawa!';
       this.pushHud(true);
+      this.emitLiveSnapshot(true);
 
       if (this.lives <= 0) {
         const finalSnap = this.buildHudSnapshot();
@@ -849,12 +1130,14 @@ export class GameEngine {
     this.combo += 1;
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
 
+    let feverJustStarted = false;
     if (!this.feverActive) {
       this.feverStreak += 1;
       if (this.feverStreak >= 10) {
         this.feverActive = true;
         this.feverTimeLeft = 6.0;
         this.cameraShake = 0.55;
+        feverJustStarted = true;
         this.emitPopup(this.playerX, this.playerY + 2.6, 'PESTA MANIS x2!', 'fever');
         soundEngine.playFeverStart();
         soundEngine.setBgmFever(true);
@@ -869,23 +1152,28 @@ export class GameEngine {
       this.timeLeft += info.bonusTime;
       this.cameraShake = Math.max(this.cameraShake, 0.25);
       this.emitPopup(item.x, item.y + 0.8, `+${info.bonusTime} Detik!`, 'time');
+      this.pendingEventLabel = `+${info.bonusTime} Detik!`;
       soundEngine.playClockBonus();
     } else {
       const suffix = mult > 1 ? ` (x${mult})` : '';
+      const label = `+${earned}${suffix}`;
       this.cameraShake = Math.max(this.cameraShake, info.isRare ? 0.28 : 0.12);
       this.emitPopup(
         item.x,
         item.y + 0.7,
-        `+${earned}${suffix}`,
+        label,
         info.isRare ? 'bonus' : 'points',
       );
+      this.pendingEventLabel = feverJustStarted ? 'PESTA MANIS x2!' : label;
       soundEngine.playCatch(this.combo, info.isRare);
     }
 
+    this.liveSeq += 1;
     rig.happyTimer = 0.45;
     triggerSquash(rig, 2.6);
     this.particles.burst(item.x, item.y, 0.2, info.color, info.isRare ? 18 : 12, false);
     this.pushHud(true);
+    this.emitLiveSnapshot(true);
     return false;
   }
 
@@ -925,6 +1213,8 @@ export class GameEngine {
         this.updateMenuScene(dt);
       } else if (this.phase === 'playing') {
         this.updateGameplay(dt);
+      } else if (this.phase === 'spectating') {
+        this.updateSpectating(dt);
       } else if (this.phase === 'gameover') {
         animateCharacter(this.getActiveRig(), dt, this.elapsed, {
           vx: 0,
@@ -966,6 +1256,7 @@ export class GameEngine {
     dom.removeEventListener('webglcontextlost', this.handleContextLost);
 
     this.clearItems();
+    this.clearRemoteItems();
     this.particles.dispose();
     this.collectibleFactory.dispose();
     disposeObject3D(this.scene);

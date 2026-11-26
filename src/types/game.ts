@@ -1,6 +1,6 @@
 export type CharacterId = 'dudu' | 'tata';
 
-export type GamePhase = 'menu' | 'playing' | 'paused' | 'gameover';
+export type GamePhase = 'menu' | 'playing' | 'spectating' | 'paused' | 'gameover';
 
 export type InGameDuration = 45 | 60 | 90;
 
@@ -16,11 +16,15 @@ export type CollectibleType =
 export type HatId = 'hat_straw' | 'hat_strawberry' | 'hat_crown';
 export type GlassesId = 'glasses_cool' | 'glasses_round';
 export type ShirtId = 'shirt_pink' | 'shirt_mint' | 'shirt_butter';
-export type BagId = 'bag_boba' | 'bag_strawberry' | 'bag_star';
+export type CostumeId =
+  | 'style_mask_cat'
+  | 'style_mask_bunny'
+  | 'style_uniform_sailor'
+  | 'style_uniform_royal';
 export type CarpetId = 'default' | 'carpet_checker' | 'carpet_polka' | 'carpet_stars';
 export type BoosterId = 'boost_speed' | 'boost_time2x';
 
-export type ShopCategory = 'hat' | 'glasses' | 'shirt' | 'bag' | 'carpet' | 'booster';
+export type ShopCategory = 'hat' | 'glasses' | 'shirt' | 'costume' | 'carpet' | 'booster';
 
 export interface ShopItem {
   id: string;
@@ -108,33 +112,42 @@ export const SHOP_ITEMS: ShopItem[] = [
     swatchColor: '#FFE082',
   },
 
-  // Tas (Baru!)
+  // Topeng & Seragam (Jelas terlihat dari depan 2.5D!)
   {
-    id: 'bag_boba',
-    name: 'Tas Boba Selempang',
-    category: 'bag',
+    id: 'style_mask_cat',
+    name: 'Topeng Kucing Pahlawan',
+    category: 'costume',
     priceRupiah: 65000,
-    description: 'Tas selempang lucu berbentuk gelas boba karamel',
-    swatchColor: '#F7D294',
-    accentColor: '#FF6B8B',
+    description: 'Topeng mata bertelinga kucing ungu yang keren di wajah',
+    swatchColor: '#7B2CBF',
+    accentColor: '#FFD166',
   },
   {
-    id: 'bag_strawberry',
-    name: 'Tas Ransel Stroberi',
-    category: 'bag',
-    priceRupiah: 75000,
-    description: 'Ransel merah mungil dengan aksen daun hijau',
-    swatchColor: '#FF5E78',
-    accentColor: '#6BD47F',
+    id: 'style_mask_bunny',
+    name: 'Topeng Kelinci Pesta',
+    category: 'costume',
+    priceRupiah: 70000,
+    description: 'Topeng pesta pastel berhias telinga kelinci & bintang emas',
+    swatchColor: '#FF6B8B',
+    accentColor: '#FFF3B0',
   },
   {
-    id: 'bag_star',
-    name: 'Tas Bintang Madu',
-    category: 'bag',
-    priceRupiah: 85000,
-    description: 'Tas bahu kuning bintang yang berkilau cerah',
-    swatchColor: '#FFD166',
-    accentColor: '#FFF8D6',
+    id: 'style_uniform_sailor',
+    name: 'Seragam Pelaut Manis',
+    category: 'costume',
+    priceRupiah: 80000,
+    description: 'Seragam kerah pelaut biru dongker lengkap dengan pita merah',
+    swatchColor: '#2B4C7E',
+    accentColor: '#E63946',
+  },
+  {
+    id: 'style_uniform_royal',
+    name: 'Seragam Pangeran Buah',
+    category: 'costume',
+    priceRupiah: 90000,
+    description: 'Jaket seragam biru kerajaan dengan selempang & kancing emas',
+    swatchColor: '#3A86FF',
+    accentColor: '#FFD166',
   },
 
   // Karpet Pola (Stage Floor)
@@ -191,7 +204,7 @@ export interface EquippedLoadout {
   hat: HatId | null;
   glasses: GlassesId | null;
   shirt: ShirtId | null;
-  bag: BagId | null;
+  costume: CostumeId | null;
 }
 
 export interface ActiveBoosters {
@@ -357,7 +370,47 @@ export interface PlayerSaveStore {
   armedBoosters: ActiveBoosters;
 }
 
-export type RoomStatus = 'waiting' | 'player1_turn' | 'player2_turn' | 'finished';
+export interface PlayerDirectoryEntry {
+  playerCode: string;
+  uid: string;
+  displayName: string;
+  photoURL: string;
+  preferredChar: CharacterId;
+  duduBest: number;
+  tataBest: number;
+}
+
+export type MatchStatus =
+  | 'invited'
+  | 'player1_turn'
+  | 'player2_turn'
+  | 'finished'
+  | 'declined';
+
+export interface LiveFallingItem {
+  id: number;
+  type: CollectibleType;
+  x: number;
+  y: number;
+}
+
+export interface LiveMatchState {
+  turnUid: string;
+  charId: CharacterId;
+  x: number;
+  y: number;
+  vx: number;
+  score: number;
+  timeLeft: number;
+  lives: number;
+  combo: number;
+  maxCombo: number;
+  itemsCaught: number;
+  feverActive: boolean;
+  seq: number;
+  eventLabel: string;
+  items: LiveFallingItem[];
+}
 
 export interface TurnPlayerResult {
   score: number;
@@ -368,24 +421,22 @@ export interface TurnPlayerResult {
   durationUsed: number;
 }
 
-export interface TurnRoom {
-  roomCode: string;
+export interface TurnMatch {
+  matchId: string;
   durationSec: InGameDuration;
-  status: RoomStatus;
+  status: MatchStatus;
   player1Uid: string;
+  player1Code: string;
   player1Name: string;
   player1Char: CharacterId;
-  player2Uid: string | null;
-  player2Name: string | null;
-  player2Char: CharacterId | null;
+  player1Photo: string;
+  player2Uid: string;
+  player2Code: string;
+  player2Name: string;
+  player2Char: CharacterId;
+  player2Photo: string;
+  liveState: LiveMatchState | null;
   player1Result: TurnPlayerResult | null;
   player2Result: TurnPlayerResult | null;
   winnerUid: string | null;
 }
-
-export interface CloudUserProfile extends PlayerSaveStore {
-  uid: string;
-  displayName: string;
-  photoURL: string;
-}
-

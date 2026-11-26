@@ -12,9 +12,16 @@
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
+        "playerCode": {
+          "type": "string",
+          "description": "Permanent unique 6-digit player ID for mabar invites.",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[0-9]{6}$"
+        },
         "displayName": {
           "type": "string",
-          "description": "Player display name shown in profile and multiplayer rooms.",
+          "description": "Player display name shown in profile and mabar invites.",
           "minLength": 1,
           "maxLength": 40
         },
@@ -53,7 +60,7 @@
         },
         "equippedByChar": {
           "type": "object",
-          "description": "Equipped hat, glasses, shirt, and bag IDs for dudu and tata."
+          "description": "Equipped hat, glasses, shirt, and costume IDs for dudu and tata."
         },
         "equippedCarpet": {
           "type": "string",
@@ -81,6 +88,7 @@
       },
       "required": [
         "uid",
+        "playerCode",
         "displayName",
         "photoURL",
         "tataBest",
@@ -98,17 +106,77 @@
         "updatedAt"
       ]
     },
-    "TurnRoom": {
-      "title": "TurnRoom",
-      "description": "Online turn-based 2-player duel room keyed by 6-character room code.",
+    "PlayerDirectoryEntry": {
+      "title": "PlayerDirectoryEntry",
+      "description": "Public non-PII mabar card keyed by 6-digit playerCode.",
       "type": "object",
       "properties": {
-        "roomCode": {
+        "playerCode": {
           "type": "string",
-          "description": "6-character uppercase alphanumeric join code.",
+          "description": "Unique 6-digit player ID.",
           "minLength": 6,
           "maxLength": 6,
-          "pattern": "^[A-Z0-9]{6}$"
+          "pattern": "^[0-9]{6}$"
+        },
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Player display name.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional avatar URL.",
+          "maxLength": 512
+        },
+        "preferredChar": {
+          "type": "string",
+          "enum": ["dudu", "tata"],
+          "description": "Currently selected character."
+        },
+        "duduBest": {
+          "type": "integer",
+          "description": "Highest Dudu score."
+        },
+        "tataBest": {
+          "type": "integer",
+          "description": "Highest Tata score."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest update."
+        }
+      },
+      "required": [
+        "playerCode",
+        "uid",
+        "displayName",
+        "photoURL",
+        "preferredChar",
+        "duduBest",
+        "tataBest",
+        "updatedAt"
+      ]
+    },
+    "TurnMatch": {
+      "title": "TurnMatch",
+      "description": "Direct-invite online turn-based 2-player duel with live 3D spectator state.",
+      "type": "object",
+      "properties": {
+        "matchId": {
+          "type": "string",
+          "description": "Unique match ID.",
+          "minLength": 6,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
         "durationSec": {
           "type": "integer",
@@ -116,19 +184,26 @@
         },
         "status": {
           "type": "string",
-          "enum": ["waiting", "player1_turn", "player2_turn", "finished"],
-          "description": "Turn-based match lifecycle status."
+          "enum": ["invited", "player1_turn", "player2_turn", "finished", "declined"],
+          "description": "Turn-based invite & live match lifecycle status."
         },
         "player1Uid": {
           "type": "string",
-          "description": "Host player Firebase Auth UID.",
+          "description": "Inviter Firebase Auth UID.",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
+        "player1Code": {
+          "type": "string",
+          "description": "Inviter 6-digit playerCode.",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[0-9]{6}$"
+        },
         "player1Name": {
           "type": "string",
-          "description": "Host player display name.",
+          "description": "Inviter display name.",
           "minLength": 1,
           "maxLength": 40
         },
@@ -137,55 +212,84 @@
           "enum": ["dudu", "tata"],
           "description": "Character selected by Player 1."
         },
+        "player1Photo": {
+          "type": "string",
+          "description": "Inviter avatar URL.",
+          "maxLength": 512
+        },
         "player2Uid": {
           "type": "string",
-          "description": "Guest player Firebase Auth UID (null while waiting).",
-          "maxLength": 128
+          "description": "Invited player Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "player2Code": {
+          "type": "string",
+          "description": "Invited player 6-digit playerCode.",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[0-9]{6}$"
         },
         "player2Name": {
           "type": "string",
-          "description": "Guest player display name (null while waiting).",
+          "description": "Invited player display name.",
+          "minLength": 1,
           "maxLength": 40
         },
         "player2Char": {
           "type": "string",
-          "description": "Character selected by Player 2 (null while waiting).",
-          "maxLength": 10
+          "enum": ["dudu", "tata"],
+          "description": "Character selected by Player 2."
+        },
+        "player2Photo": {
+          "type": "string",
+          "description": "Invited player avatar URL.",
+          "maxLength": 512
+        },
+        "liveState": {
+          "type": "object",
+          "description": "Real-time position, falling items, and live HUD snapshot of the active turn player."
         },
         "player1Result": {
           "type": "object",
-          "description": "Submitted score summary after Player 1 finishes."
+          "description": "Final turn score summary for Player 1."
         },
         "player2Result": {
           "type": "object",
-          "description": "Submitted score summary after Player 2 finishes."
+          "description": "Final turn score summary for Player 2."
         },
         "winnerUid": {
           "type": "string",
-          "description": "Winning player UID or 'draw' once finished.",
+          "description": "Winning player UID or 'draw'.",
           "maxLength": 128
         },
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp when room was created."
+          "description": "Server timestamp when invite was created."
         },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp of latest room update."
+          "description": "Server timestamp of latest update."
         }
       },
       "required": [
-        "roomCode",
+        "matchId",
         "durationSec",
         "status",
         "player1Uid",
+        "player1Code",
         "player1Name",
         "player1Char",
+        "player1Photo",
         "player2Uid",
+        "player2Code",
         "player2Name",
         "player2Char",
+        "player2Photo",
+        "liveState",
         "player1Result",
         "player2Result",
         "winnerUid",
@@ -199,9 +303,13 @@
       "schema": { "$ref": "#/entities/UserProfile" },
       "description": "Private player profile and cloud save progression owned by userId."
     },
-    "/rooms/{roomCode}": {
-      "schema": { "$ref": "#/entities/TurnRoom" },
-      "description": "Turn-based multiplayer duel room accessed by exact roomCode."
+    "/playerDirectory/{playerCode}": {
+      "schema": { "$ref": "#/entities/PlayerDirectoryEntry" },
+      "description": "Non-PII mabar player directory keyed by unique 6-digit playerCode."
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/TurnMatch" },
+      "description": "Direct-invite turn-based multiplayer match with live spectator streaming."
     }
   }
 }

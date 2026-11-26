@@ -7,7 +7,9 @@ import { GameHUD } from './components/GameHUD';
 import { GameOverModal } from './components/GameOverModal';
 import { ShopModal } from './components/ShopModal';
 import {
+  AuthErrorDetail,
   auth,
+  parseAuthError,
   signInWithGooglePopup,
   signOutFirebase,
 } from './firebase/config';
@@ -16,19 +18,21 @@ import {
   syncCloudProfile,
 } from './firebase/profileService';
 import {
-  cancelWaitingRoom,
-  createTurnRoom,
-  joinTurnRoom,
-  submitPlayer1TurnResult,
-  submitPlayer2TurnResult,
-  subscribeTurnRoom,
-} from './firebase/roomService';
+  acceptMabarInvite,
+  declineOrCancelInvite,
+  finishPlayer1Turn,
+  finishPlayer2Turn,
+  pushLiveMatchState,
+  sendMabarInvite,
+  subscribeIncomingInvites,
+  subscribeMatch,
+} from './firebase/matchService';
 import { GameEngine } from './three/GameEngine';
 import {
   ActiveBoosters,
-  BagId,
   CarpetId,
   CharacterId,
+  CostumeId,
   EquippedLoadout,
   ExchangeTier,
   FloatingPopup,
@@ -37,13 +41,14 @@ import {
   HatId,
   HudSnapshot,
   InGameDuration,
+  LiveMatchState,
   MAX_PLAYER_LIVES,
   PlayerSaveStore,
   ShirtId,
   ShopItem,
   TIME_MODES,
+  TurnMatch,
   TurnPlayerResult,
-  TurnRoom,
 } from './types/game';
 
 const STORAGE_KEY = 'dudu_tata_save_v3';
@@ -53,7 +58,7 @@ const DEFAULT_LOADOUT: EquippedLoadout = {
   hat: null,
   glasses: null,
   shirt: null,
-  bag: null,
+  costume: null,
 };
 
 function createDefaultSaveStore(): PlayerSaveStore {
@@ -101,13 +106,13 @@ function loadSaveStore(): PlayerSaveStore {
             hat: p.equippedByChar?.dudu?.hat ?? null,
             glasses: p.equippedByChar?.dudu?.glasses ?? null,
             shirt: p.equippedByChar?.dudu?.shirt ?? null,
-            bag: p.equippedByChar?.dudu?.bag ?? null,
+            costume: p.equippedByChar?.dudu?.costume ?? null,
           },
           tata: {
             hat: p.equippedByChar?.tata?.hat ?? null,
             glasses: p.equippedByChar?.tata?.glasses ?? null,
             shirt: p.equippedByChar?.tata?.shirt ?? null,
-            bag: p.equippedByChar?.tata?.bag ?? null,
+            costume: p.equippedByChar?.tata?.costume ?? null,
           },
         },
         equippedCarpet: p.equippedCarpet ?? 'default',
@@ -174,21 +179,24 @@ export default function App() {
     isNewRecord: boolean;
   }>({ previousBest: 0, isNewRecord: false });
 
-  // Firebase Cloud Profile & Online Turn-Based Multiplayer state
+  // Firebase Cloud Profile & Direct-Invite Live Turn-Based Mabar state
   const [user, setUser] = useState<User | null>(null);
+  const [playerCode, setPlayerCode] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [cloudSynced, setCloudSynced] = useState(false);
-  const [showMultiplayer, setShowMultiplayer] = useState(false);
-  const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
-  const [activeRoom, setActiveRoom] = useState<TurnRoom | null>(null);
-  const [localDuelRole, setLocalDuelRole] = useState<'player1' | 'player2' | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
+  const [activeMatch, setActiveMatch] = useState<TurnMatch | null>(null);
+  const [incomingInvites, setIncomingInvites] = useState<TurnMatch[]>([]);
+  const [localRole, setLocalRole] = useState<'player1' | 'player2' | null>(null);
   const [activeDuelTurn, setActiveDuelTurn] = useState<{
-    roomCode: string;
+    matchId: string;
     role: 'player1' | 'player2';
     durationSec: InGameDuration;
   } | null>(null);
-  const [roomError, setRoomError] = useState<string | null>(null);
-  const [roomBusy, setRoomBusy] = useState(false);
+  const [matchError, setMatchError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<AuthErrorDetail | null>(null);
+  const [matchBusy, setMatchBusy] = useState(false);
 
   const selectedCharRef = useRef<CharacterId>(selectedCharacter);
   selectedCharRef.current = selectedCharacter;
@@ -202,20 +210,30 @@ export default function App() {
   const userRef = useRef<User | null>(user);
   userRef.current = user;
 
-  const activeRoomRef = useRef<TurnRoom | null>(activeRoom);
-  activeRoomRef.current = activeRoom;
+  const playerCodeRef = useRef<string | null>(playerCode);
+  playerCodeRef.current = playerCode;
+
+  const activeMatchRef = useRef<TurnMatch | null>(activeMatch);
+  activeMatchRef.current = activeMatch;
+
+  const localRoleRef = useRef<'player1' | 'player2' | null>(localRole);
+  localRoleRef.current = localRole;
 
   const activeDuelTurnRef = useRef(activeDuelTurn);
   activeDuelTurnRef.current = activeDuelTurn;
+
+  const liveStreamBusyRef = useRef(false);
+  const launchedMatchPhaseRef = useRef<string | null>(null);
 
   const saveAndSync = useCallback((next: PlayerSaveStore) => {
     saveStoreRef.current = next;
     setSaveStore(next);
     persistSaveStore(next);
     const curUser = userRef.current;
-    if (curUser) {
+    const code = playerCodeRef.current;
+    if (curUser && code) {
       setCloudSynced(false);
-      syncCloudProfile(curUser, next)
+      syncCloudProfile(curUser, code, next, selectedCharRef.current)
         .then(() => setCloudSynced(true))
         .catch((err) => {
           console.error('Cloud profile sync failed:', err);
@@ -223,28 +241,34 @@ export default function App() {
     }
   }, []);
 
-  // Auth listener -> loads or creates Firestore Cloud Profile
+  // Auth listener -> loads or creates Firestore Cloud Profile + unique 6-digit playerCode
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
       if (!nextUser) {
+        setPlayerCode(null);
         setCloudSynced(false);
-        setActiveRoomCode(null);
-        setActiveRoom(null);
-        setLocalDuelRole(null);
+        setActiveMatchId(null);
+        setActiveMatch(null);
+        setIncomingInvites([]);
+        setLocalRole(null);
+        setActiveDuelTurn(null);
         return;
       }
+      setAuthError(null);
       try {
-        const syncedStore = await loadOrCreateCloudProfile(
+        const result = await loadOrCreateCloudProfile(
           nextUser,
           saveStoreRef.current,
+          selectedCharRef.current,
         );
-        saveStoreRef.current = syncedStore;
-        setSaveStore(syncedStore);
-        persistSaveStore(syncedStore);
+        setPlayerCode(result.playerCode);
+        saveStoreRef.current = result.store;
+        setSaveStore(result.store);
+        persistSaveStore(result.store);
         engineRef.current?.applyLoadouts(
-          syncedStore.equippedByChar,
-          syncedStore.equippedCarpet,
+          result.store.equippedByChar,
+          result.store.equippedCarpet,
         );
         setCloudSynced(true);
       } catch (err) {
@@ -254,29 +278,184 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Live Firestore room subscription
+  // Incoming mabar invites listener
   useEffect(() => {
-    if (!user || !activeRoomCode) {
-      setActiveRoom(null);
+    if (!user) {
+      setIncomingInvites([]);
       return;
     }
-    const unsub = subscribeTurnRoom(
-      activeRoomCode,
-      (room) => {
-        if (!room) {
-          setActiveRoom(null);
-          setActiveRoomCode(null);
-          setLocalDuelRole(null);
-          return;
-        }
-        setActiveRoom(room);
-      },
-      (err) => {
-        setRoomError(err.message);
-      },
+    const unsub = subscribeIncomingInvites(
+      user.uid,
+      (invites) => setIncomingInvites(invites),
+      (err) => console.error('Incoming invites listener error:', err),
     );
     return () => unsub();
-  }, [user, activeRoomCode]);
+  }, [user]);
+
+  const startMyDuelTurn = useCallback((match: TurnMatch, role: 'player1' | 'player2') => {
+    const turnChar = role === 'player1' ? match.player1Char : match.player2Char;
+    launchedMatchPhaseRef.current = `${match.matchId}:${match.status}:${role}`;
+    setSelectedCharacter(turnChar);
+    engineRef.current?.setSelectedCharacter(turnChar);
+    setActiveDuelTurn({
+      matchId: match.matchId,
+      role,
+      durationSec: match.durationSec,
+    });
+    setRoundBoosters({ speedBoost: false, time2xBoost: false });
+    setBombReturnNotice(null);
+    setOverModal('none');
+    setShowInviteModal(false);
+    setPopups([]);
+    setHud({
+      ...INITIAL_HUD,
+      lives: MAX_PLAYER_LIVES,
+      maxLives: MAX_PLAYER_LIVES,
+      timeLeft: match.durationSec,
+    });
+    setPhase('playing');
+    engineRef.current?.startGame(
+      turnChar,
+      match.durationSec,
+      { speedBoost: false, time2xBoost: false },
+      { streamLive: true },
+    );
+  }, []);
+
+  const enterSpectatorArena = useCallback(
+    (charId: CharacterId, durationSec: number) => {
+      setOverModal('none');
+      setShowInviteModal(false);
+      setPopups([]);
+      setHud({
+        ...INITIAL_HUD,
+        lives: MAX_PLAYER_LIVES,
+        maxLives: MAX_PLAYER_LIVES,
+        timeLeft: durationSec,
+      });
+      setPhase('spectating');
+      engineRef.current?.startSpectating(charId, durationSec);
+    },
+    [],
+  );
+
+  // Live Match subscription -> Drives automatic 3D arena entry, live spectating, and turn transitions
+  useEffect(() => {
+    if (!user || !activeMatchId) {
+      setActiveMatch(null);
+      launchedMatchPhaseRef.current = null;
+      return;
+    }
+
+    const unsub = subscribeMatch(
+      activeMatchId,
+      (match) => {
+        if (!match) {
+          setActiveMatch(null);
+          setActiveMatchId(null);
+          setLocalRole(null);
+          launchedMatchPhaseRef.current = null;
+          return;
+        }
+        setActiveMatch(match);
+
+        const role =
+          localRoleRef.current ||
+          (user.uid === match.player2Uid ? 'player2' : 'player1');
+
+        if (match.status === 'declined') {
+          setActiveDuelTurn(null);
+          setActiveMatchId(null);
+          setActiveMatch(null);
+          setLocalRole(null);
+          launchedMatchPhaseRef.current = null;
+          if (phaseRef.current === 'spectating' || phaseRef.current === 'playing') {
+            engineRef.current?.returnToMenu();
+            setPhase('menu');
+          }
+          setMatchError('Undangan mabar dibatalkan atau ditolak.');
+          return;
+        }
+
+        if (match.status === 'player1_turn') {
+          const key = `${match.matchId}:player1_turn:${role}`;
+          if (role === 'player1') {
+            if (launchedMatchPhaseRef.current !== key) {
+              startMyDuelTurn(match, 'player1');
+            }
+          } else {
+            if (phaseRef.current !== 'spectating') {
+              launchedMatchPhaseRef.current = key;
+              enterSpectatorArena(match.player1Char, match.durationSec);
+            }
+            if (match.liveState) {
+              engineRef.current?.applyRemoteLiveState(match.liveState);
+              setHud((prev) => ({
+                ...prev,
+                score: match.liveState!.score,
+                timeLeft: match.liveState!.timeLeft,
+                lives: match.liveState!.lives,
+                combo: match.liveState!.combo,
+                maxCombo: match.liveState!.maxCombo,
+                itemsCaught: match.liveState!.itemsCaught,
+                feverActive: match.liveState!.feverActive,
+                multiplier:
+                  (1 + Math.min(4, Math.floor(match.liveState!.combo / 4))) *
+                  (match.liveState!.feverActive ? 2 : 1),
+              }));
+            }
+          }
+          return;
+        }
+
+        if (match.status === 'player2_turn') {
+          if (role === 'player1') {
+            // Player 1 watches Player 2 live in the 3D arena while waiting for match result!
+            if (phaseRef.current !== 'spectating' && phaseRef.current !== 'playing') {
+              enterSpectatorArena(match.player2Char, match.durationSec);
+            }
+            if (match.liveState) {
+              engineRef.current?.applyRemoteLiveState(match.liveState);
+              setHud((prev) => ({
+                ...prev,
+                score: match.liveState!.score,
+                timeLeft: match.liveState!.timeLeft,
+                lives: match.liveState!.lives,
+                combo: match.liveState!.combo,
+                maxCombo: match.liveState!.maxCombo,
+                itemsCaught: match.liveState!.itemsCaught,
+                feverActive: match.liveState!.feverActive,
+                multiplier:
+                  (1 + Math.min(4, Math.floor(match.liveState!.combo / 4))) *
+                  (match.liveState!.feverActive ? 2 : 1),
+              }));
+            }
+          } else {
+            // Player 2 stays on 3D arena and sees "Giliranmu Sekarang! Mulai Main" CTA
+            if (phaseRef.current !== 'playing' && phaseRef.current !== 'spectating') {
+              enterSpectatorArena(match.player2Char, match.durationSec);
+            }
+          }
+          return;
+        }
+
+        if (match.status === 'finished') {
+          setActiveDuelTurn(null);
+          launchedMatchPhaseRef.current = null;
+          if (phaseRef.current === 'spectating' || phaseRef.current === 'playing') {
+            engineRef.current?.returnToMenu();
+            setPhase('menu');
+          }
+          setShowInviteModal(true);
+        }
+      },
+      (err) => {
+        setMatchError(err.message);
+      },
+    );
+
+    return () => unsub();
+  }, [activeMatchId, enterSpectatorArena, startMyDuelTurn, user]);
 
   const handlePopup = useCallback((popup: FloatingPopup) => {
     setPopups((prev) => [...prev.slice(-8), popup]);
@@ -292,10 +471,28 @@ export default function App() {
     }, 180);
   }, []);
 
+  const handleLiveFrame = useCallback((frame: Omit<LiveMatchState, 'turnUid'>) => {
+    const duel = activeDuelTurnRef.current;
+    const curUser = userRef.current;
+    if (!duel || !curUser || liveStreamBusyRef.current) return;
+
+    liveStreamBusyRef.current = true;
+    pushLiveMatchState(duel.matchId, {
+      ...frame,
+      turnUid: curUser.uid,
+    })
+      .catch((err) => {
+        console.error('Live stream frame skipped:', err);
+      })
+      .finally(() => {
+        liveStreamBusyRef.current = false;
+      });
+  }, []);
+
   const finalizeDuelTurn = useCallback(
     async (
       finalHud: HudSnapshot,
-      duel: { roomCode: string; role: 'player1' | 'player2'; durationSec: InGameDuration },
+      duel: { matchId: string; role: 'player1' | 'player2'; durationSec: InGameDuration },
     ) => {
       const charId = selectedCharRef.current;
       const current = saveStoreRef.current;
@@ -322,23 +519,38 @@ export default function App() {
       setActiveDuelTurn(null);
       setPopups([]);
       setOverModal('none');
-      engineRef.current?.returnToMenu();
-      setPhase('menu');
-      setShowMultiplayer(true);
 
-      try {
-        if (duel.role === 'player1') {
-          await submitPlayer1TurnResult(duel.roomCode, turnResult);
-        } else if (activeRoomRef.current) {
-          await submitPlayer2TurnResult(activeRoomRef.current, turnResult);
+      if (duel.role === 'player1') {
+        const curMatch = activeMatchRef.current;
+        if (curMatch) {
+          enterSpectatorArena(curMatch.player2Char, curMatch.durationSec);
+        } else {
+          engineRef.current?.returnToMenu();
+          setPhase('menu');
         }
-      } catch (err) {
-        setRoomError(
-          err instanceof Error ? err.message : 'Gagal mengirim skor giliran ke server.',
-        );
+        try {
+          await finishPlayer1Turn(duel.matchId, turnResult);
+        } catch (err) {
+          setMatchError(
+            err instanceof Error ? err.message : 'Gagal mengirim skor giliran ke server.',
+          );
+        }
+      } else {
+        engineRef.current?.returnToMenu();
+        setPhase('menu');
+        setShowInviteModal(true);
+        try {
+          if (activeMatchRef.current) {
+            await finishPlayer2Turn(activeMatchRef.current, turnResult);
+          }
+        } catch (err) {
+          setMatchError(
+            err instanceof Error ? err.message : 'Gagal menyelesaikan pertandingan.',
+          );
+        }
       }
     },
-    [saveAndSync],
+    [enterSpectatorArena, saveAndSync],
   );
 
   const handleGameOver = useCallback(
@@ -415,10 +627,10 @@ export default function App() {
       onGameOver: handleGameOver,
       onLivesDepleted: handleLivesDepleted,
       onHazardHit: handleHazardHit,
+      onLiveFrame: handleLiveFrame,
     });
     engineRef.current = engine;
 
-    // Apply saved 3D hats, glasses, shirts, bags & patterned carpet immediately
     const initialStore = saveStoreRef.current;
     engine.applyLoadouts(initialStore.equippedByChar, initialStore.equippedCarpet);
 
@@ -427,7 +639,7 @@ export default function App() {
       engine.dispose();
       engineRef.current = null;
     };
-  }, [handleGameOver, handleHazardHit, handleLivesDepleted, handlePopup]);
+  }, [handleGameOver, handleHazardHit, handleLiveFrame, handleLivesDepleted, handlePopup]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -505,16 +717,15 @@ export default function App() {
 
   const handleGoogleLogin = async () => {
     soundEngine.playClick();
-    setRoomError(null);
+    setMatchError(null);
+    setAuthError(null);
     setAuthBusy(true);
     try {
       await signInWithGooglePopup();
     } catch (err) {
-      setRoomError(
-        err instanceof Error
-          ? err.message
-          : 'Login Google dibatalkan atau terblokir popup.',
-      );
+      const parsed = parseAuthError(err);
+      setAuthError(parsed);
+      setMatchError(parsed.message);
     } finally {
       setAuthBusy(false);
     }
@@ -522,99 +733,77 @@ export default function App() {
 
   const handleGoogleLogout = async () => {
     soundEngine.playClick();
+    setAuthError(null);
     await signOutFirebase();
   };
 
-  const handleCreateRoom = async (charId: CharacterId, duration: InGameDuration) => {
-    if (!user) return;
+  const handleSendInvite = async (
+    targetCode: string,
+    myChar: CharacterId,
+    duration: InGameDuration,
+  ) => {
+    if (!user || !playerCode) return;
     soundEngine.playClick();
-    setRoomError(null);
-    setRoomBusy(true);
+    setMatchError(null);
+    setMatchBusy(true);
     try {
-      const created = await createTurnRoom(user, charId, duration);
-      setLocalDuelRole('player1');
-      setActiveRoom(created);
-      setActiveRoomCode(created.roomCode);
+      const { match } = await sendMabarInvite(user, playerCode, myChar, targetCode, duration);
+      setLocalRole('player1');
+      setActiveMatch(match);
+      setActiveMatchId(match.matchId);
     } catch (err) {
-      setRoomError(err instanceof Error ? err.message : 'Gagal membuat room.');
+      setMatchError(err instanceof Error ? err.message : 'Gagal mengirim undangan mabar.');
     } finally {
-      setRoomBusy(false);
+      setMatchBusy(false);
     }
   };
 
-  const handleJoinRoom = async (roomCode: string, charId: CharacterId) => {
+  const handleAcceptInvite = async (match: TurnMatch, myChar: CharacterId) => {
     if (!user) return;
     soundEngine.playClick();
-    setRoomError(null);
-    setRoomBusy(true);
+    setMatchError(null);
+    setMatchBusy(true);
     try {
-      const joined = await joinTurnRoom(roomCode, user, charId);
-      setLocalDuelRole('player2');
-      setActiveRoom(joined);
-      setActiveRoomCode(joined.roomCode);
+      setLocalRole('player2');
+      setActiveMatch({ ...match, player2Char: myChar, status: 'player1_turn' });
+      setActiveMatchId(match.matchId);
+      await acceptMabarInvite(match.matchId, user, myChar);
+      enterSpectatorArena(match.player1Char, match.durationSec);
     } catch (err) {
-      setRoomError(err instanceof Error ? err.message : 'Gagal bergabung ke room.');
+      setMatchError(err instanceof Error ? err.message : 'Gagal menerima undangan.');
     } finally {
-      setRoomBusy(false);
+      setMatchBusy(false);
     }
   };
 
-  const handleStartDuelTurn = () => {
-    if (!activeRoom || !user) return;
-    soundEngine.playClick();
-
-    const role: 'player1' | 'player2' =
-      localDuelRole || (user.uid === activeRoom.player2Uid ? 'player2' : 'player1');
-    const turnChar =
-      role === 'player1'
-        ? activeRoom.player1Char
-        : activeRoom.player2Char || selectedCharacter;
-
-    setSelectedCharacter(turnChar);
-    engineRef.current?.setSelectedCharacter(turnChar);
-    setActiveDuelTurn({
-      roomCode: activeRoom.roomCode,
-      role,
-      durationSec: activeRoom.durationSec,
-    });
-    setRoundBoosters({ speedBoost: false, time2xBoost: false });
-    setBombReturnNotice(null);
-    setOverModal('none');
-    setShowMultiplayer(false);
-    setPopups([]);
-    setHud({
-      ...INITIAL_HUD,
-      lives: MAX_PLAYER_LIVES,
-      maxLives: MAX_PLAYER_LIVES,
-      timeLeft: activeRoom.durationSec,
-    });
-    setPhase('playing');
-    engineRef.current?.startGame(turnChar, activeRoom.durationSec, {
-      speedBoost: false,
-      time2xBoost: false,
-    });
-  };
-
-  const handleCancelWaitingRoom = async () => {
-    if (!activeRoom) return;
+  const handleDeclineInvite = async (matchId: string) => {
     soundEngine.playClick();
     try {
-      await cancelWaitingRoom(activeRoom.roomCode);
+      await declineOrCancelInvite(matchId);
     } catch (err) {
       console.error(err);
     }
-    setActiveRoomCode(null);
-    setActiveRoom(null);
-    setLocalDuelRole(null);
-    setRoomError(null);
   };
 
-  const handleLeaveRoom = () => {
+  const handleCancelOutgoingInvite = async (matchId: string) => {
     soundEngine.playClick();
-    setActiveRoomCode(null);
-    setActiveRoom(null);
-    setLocalDuelRole(null);
-    setRoomError(null);
+    try {
+      await declineOrCancelInvite(matchId);
+    } catch (err) {
+      console.error(err);
+    }
+    setActiveMatchId(null);
+    setActiveMatch(null);
+    setLocalRole(null);
+  };
+
+  const handleClearMatch = () => {
+    soundEngine.playClick();
+    setActiveMatchId(null);
+    setActiveMatch(null);
+    setLocalRole(null);
+    setMatchError(null);
+    launchedMatchPhaseRef.current = null;
   };
 
   const handleTogglePause = () => {
@@ -631,6 +820,10 @@ export default function App() {
   const handleBackToMenu = () => {
     soundEngine.playClick();
     setActiveDuelTurn(null);
+    setActiveMatchId(null);
+    setActiveMatch(null);
+    setLocalRole(null);
+    launchedMatchPhaseRef.current = null;
     setOverModal('none');
     setPopups([]);
     engineRef.current?.returnToMenu();
@@ -717,8 +910,8 @@ export default function App() {
       nextEquippedByChar[selectedCharacter].glasses = item.id as GlassesId;
     } else if (item.category === 'shirt') {
       nextEquippedByChar[selectedCharacter].shirt = item.id as ShirtId;
-    } else if (item.category === 'bag') {
-      nextEquippedByChar[selectedCharacter].bag = item.id as BagId;
+    } else if (item.category === 'costume') {
+      nextEquippedByChar[selectedCharacter].costume = item.id as CostumeId;
     } else if (item.category === 'carpet') {
       nextCarpet = item.id as CarpetId;
     }
@@ -758,9 +951,9 @@ export default function App() {
     } else if (item.category === 'shirt') {
       nextEquippedByChar[charId].shirt =
         nextEquippedByChar[charId].shirt === item.id ? null : (item.id as ShirtId);
-    } else if (item.category === 'bag') {
-      nextEquippedByChar[charId].bag =
-        nextEquippedByChar[charId].bag === item.id ? null : (item.id as BagId);
+    } else if (item.category === 'costume') {
+      nextEquippedByChar[charId].costume =
+        nextEquippedByChar[charId].costume === item.id ? null : (item.id as CostumeId);
     } else if (item.category === 'carpet') {
       nextCarpet = nextCarpet === item.id ? 'default' : (item.id as CarpetId);
     }
@@ -799,10 +992,31 @@ export default function App() {
   };
 
   const duelBadge = activeDuelTurn
-    ? `Duel #${activeDuelTurn.roomCode} · ${
-        activeDuelTurn.role === 'player1' ? 'Giliran P1' : 'Giliran P2'
-      }`
+    ? `Mabar Live · ${activeDuelTurn.role === 'player1' ? 'Giliran P1' : 'Giliran P2'}`
     : null;
+
+  const spectatingCharId: CharacterId =
+    phase === 'spectating' && activeMatch
+      ? activeMatch.status === 'player1_turn'
+        ? activeMatch.player1Char
+        : activeMatch.player2Char
+      : selectedCharacter;
+
+  const spectatingName =
+    phase === 'spectating' && activeMatch
+      ? activeMatch.status === 'player1_turn'
+        ? activeMatch.player1Name
+        : activeMatch.player2Name
+      : null;
+
+  const readyForMyTurn =
+    phase === 'spectating' &&
+    Boolean(activeMatch) &&
+    activeMatch?.status === 'player2_turn' &&
+    localRole === 'player2';
+
+  const targetScoreToBeat =
+    activeMatch?.status === 'player2_turn' ? (activeMatch.player1Result?.score ?? null) : null;
 
   return (
     <main className="relative h-[100dvh] w-screen overflow-hidden bg-[#FFE8EC]">
@@ -820,33 +1034,35 @@ export default function App() {
           onSelectDuration={handleSelectDuration}
           saveStore={saveStore}
           user={user}
+          playerCode={playerCode}
           authBusy={authBusy}
           cloudSynced={cloudSynced}
-          showMultiplayer={showMultiplayer}
-          activeRoom={activeRoom}
-          localDuelRole={localDuelRole}
-          roomError={roomError}
-          roomBusy={roomBusy}
+          showInviteModal={showInviteModal}
+          activeMatch={activeMatch}
+          incomingInvites={incomingInvites}
+          matchError={matchError}
+          authError={authError}
+          matchBusy={matchBusy}
           muted={muted}
           vibrationEnabled={vibrationEnabled}
           bombReturnNotice={bombReturnNotice}
           onDismissBombNotice={() => setBombReturnNotice(null)}
           onGoogleLogin={handleGoogleLogin}
           onGoogleLogout={handleGoogleLogout}
-          onOpenMultiplayer={() => {
+          onOpenInviteModal={() => {
             soundEngine.playClick();
-            setRoomError(null);
-            setShowMultiplayer(true);
+            setMatchError(null);
+            setShowInviteModal(true);
           }}
-          onCloseMultiplayer={() => {
+          onCloseInviteModal={() => {
             soundEngine.playClick();
-            setShowMultiplayer(false);
+            setShowInviteModal(false);
           }}
-          onCreateRoom={handleCreateRoom}
-          onJoinRoom={handleJoinRoom}
-          onStartDuelTurn={handleStartDuelTurn}
-          onCancelWaitingRoom={handleCancelWaitingRoom}
-          onLeaveRoom={handleLeaveRoom}
+          onSendInvite={handleSendInvite}
+          onAcceptInvite={handleAcceptInvite}
+          onDeclineInvite={handleDeclineInvite}
+          onCancelOutgoingInvite={handleCancelOutgoingInvite}
+          onClearMatch={handleClearMatch}
           onToggleMute={handleToggleMute}
           onToggleVibration={handleToggleVibration}
           onExchangePoints={handleExchangePoints}
@@ -857,15 +1073,24 @@ export default function App() {
         />
       )}
 
-      {(phase === 'playing' || phase === 'paused') && (
+      {(phase === 'playing' || phase === 'paused' || phase === 'spectating') && (
         <GameHUD
-          characterId={selectedCharacter}
+          characterId={spectatingCharId}
           phase={phase}
           hud={hud}
           popups={popups}
           activeBoosters={roundBoosters}
           hazardFlash={hazardFlash}
           duelBadge={duelBadge}
+          spectatingName={spectatingName}
+          targetScoreToBeat={targetScoreToBeat}
+          readyForMyTurn={readyForMyTurn}
+          onStartMyTurn={() => {
+            if (activeMatch) {
+              soundEngine.playClick();
+              startMyDuelTurn(activeMatch, 'player2');
+            }
+          }}
           muted={muted}
           vibrationEnabled={vibrationEnabled}
           onToggleMute={handleToggleMute}
