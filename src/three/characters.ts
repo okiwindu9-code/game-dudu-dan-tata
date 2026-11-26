@@ -34,6 +34,9 @@ export interface CharacterRig {
   shirtSlot: THREE.Group;
   maskSlot: THREE.Group;
   uniformSlot: THREE.Group;
+  hijabHeadSlot: THREE.Group;
+  hijabNeckSlot: THREE.Group;
+  bowtieGroup?: THREE.Group;
   // Animation state
   squashY: number;
   squashVel: number;
@@ -157,9 +160,9 @@ function createFaceFeatures(
 }
 
 export function createCharacter(id: CharacterId): CharacterRig {
-  const isTata = id === 'tata';
-  const primaryColor = isTata ? 0xc5936e : 0xfdfaf6;
-  const blushColor = isTata ? 0xf8c971 : 0xf9b2b7;
+  const isBrownBear = id === 'dudu';
+  const primaryColor = isBrownBear ? 0xc5936e : 0xfdfaf6;
+  const blushColor = isBrownBear ? 0xf8c971 : 0xf9b2b7;
 
   const primaryMat = createCelMaterial(primaryColor);
   const darkMat = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR });
@@ -196,8 +199,8 @@ export function createCharacter(id: CharacterId): CharacterRig {
 
     const legGeo = new THREE.CapsuleGeometry(0.155, 0.12, 8, 16);
     legGeo.scale(1.05, 1.0, 1.15);
-    const legMat = isTata ? primaryMat : darkToonMat;
-    const legOutline = isTata ? 0.048 : 0.015;
+    const legMat = isBrownBear ? primaryMat : darkToonMat;
+    const legOutline = isBrownBear ? 0.048 : 0.015;
     const legPart = createOutlinedPart(legGeo, legMat, legOutline);
     legPart.position.set(0, -0.05, 0);
     legPivot.add(legPart);
@@ -227,17 +230,20 @@ export function createCharacter(id: CharacterId): CharacterRig {
   const rightArm = makeArm(1);
   bodyPivot.add(leftArm, rightArm);
 
-  // 5. Dudu's signature dark espresso collar & cute bowtie!
-  if (!isTata) {
+  // 5. White bear (Tata) signature dark espresso collar & cute bowtie!
+  let bowtieGroup: THREE.Group | undefined;
+  if (!isBrownBear) {
+    bowtieGroup = new THREE.Group();
+
     const collarGeo = new THREE.TorusGeometry(0.51, 0.038, 10, 28);
     collarGeo.rotateX(Math.PI / 2);
     collarGeo.scale(1.06, 1.0, 0.88);
     const collar = new THREE.Mesh(collarGeo, darkMat);
     collar.position.set(0, 1.05, 0.02);
-    bodyPivot.add(collar);
+    bowtieGroup.add(collar);
 
-    const bowtieGroup = new THREE.Group();
-    bowtieGroup.position.set(0, 1.0, 0.49);
+    const bowAnchor = new THREE.Group();
+    bowAnchor.position.set(0, 1.0, 0.49);
 
     const lobeGeo = new THREE.SphereGeometry(0.1, 14, 10);
     lobeGeo.scale(1.2, 0.85, 0.55);
@@ -248,7 +254,8 @@ export function createCharacter(id: CharacterId): CharacterRig {
     rightLobe.position.set(0.1, 0, 0);
     rightLobe.rotation.z = -0.22;
     const knot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), darkMat);
-    bowtieGroup.add(leftLobe, rightLobe, knot);
+    bowAnchor.add(leftLobe, rightLobe, knot);
+    bowtieGroup.add(bowAnchor);
     bodyPivot.add(bowtieGroup);
   }
 
@@ -262,18 +269,18 @@ export function createCharacter(id: CharacterId): CharacterRig {
   const headPart = createOutlinedPart(headGeo, primaryMat, 0.054);
   headGroup.add(headPart);
 
-  // 7. Ears (Tata: caramel + dark inner spot; Dudu: solid dark panda ears)
+  // 7. Ears (Dudu: brown + dark inner spot; Tata: solid dark white-bear ears)
   const makeEar = (side: -1 | 1): THREE.Group => {
     const earGroup = new THREE.Group();
     earGroup.position.set(side * 0.64, 0.56, -0.03);
 
     const earGeo = new THREE.SphereGeometry(0.225, 20, 16);
     earGeo.scale(1.04, 1.0, 0.62);
-    const earMat = isTata ? primaryMat : darkToonMat;
-    const earPart = createOutlinedPart(earGeo, earMat, isTata ? 0.05 : 0.015);
+    const earMat = isBrownBear ? primaryMat : darkToonMat;
+    const earPart = createOutlinedPart(earGeo, earMat, isBrownBear ? 0.05 : 0.015);
     earGroup.add(earPart);
 
-    if (isTata) {
+    if (isBrownBear) {
       const innerGeo = new THREE.SphereGeometry(0.115, 14, 12);
       innerGeo.scale(1.0, 0.96, 0.45);
       const innerEar = new THREE.Mesh(innerGeo, darkMat);
@@ -315,6 +322,14 @@ export function createCharacter(id: CharacterId): CharacterRig {
   uniformSlot.position.set(0, 0.64, 0);
   bodyPivot.add(uniformSlot);
 
+  const hijabHeadSlot = new THREE.Group();
+  hijabHeadSlot.position.set(0, 0, 0);
+  headGroup.add(hijabHeadSlot);
+
+  const hijabNeckSlot = new THREE.Group();
+  hijabNeckSlot.position.set(0, 1.05, 0.02);
+  bodyPivot.add(hijabNeckSlot);
+
   return {
     id,
     root,
@@ -335,6 +350,9 @@ export function createCharacter(id: CharacterId): CharacterRig {
     shirtSlot,
     maskSlot,
     uniformSlot,
+    hijabHeadSlot,
+    hijabNeckSlot,
+    bowtieGroup,
     squashY: 1,
     squashVel: 0,
     blinkTimer: 1.5 + Math.random() * 2.5,
@@ -415,6 +433,94 @@ function buildHatMesh(hatId: HatId): THREE.Group {
     gem.position.set(0, 0.11, 0.3);
     g.add(gem);
   }
+
+  return g;
+}
+
+function buildHijabHeadMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const chocoMat = createCelMaterial(0x8b4e2f);
+  const mochaMat = createCelMaterial(0xa8643e);
+  const innerDarkMat = createCelMaterial(0x522e1a);
+
+  // Smooth rounded back & sides hijab hood shell wrapping the head without touching the front face
+  const backHoodGeo = new THREE.SphereGeometry(0.84, 32, 24);
+  backHoodGeo.scale(1.2, 0.99, 0.86);
+  const backHood = createOutlinedPart(backHoodGeo, chocoMat, 0.048);
+  backHood.position.set(0, 0.04, -0.22);
+  g.add(backHood);
+
+  // Top cowl dome bridging seamlessly into the front hood opening
+  const crownGeo = new THREE.SphereGeometry(0.79, 28, 20);
+  crownGeo.scale(1.18, 0.8, 0.86);
+  const crown = createOutlinedPart(crownGeo, chocoMat, 0.045);
+  crown.position.set(0, 0.25, -0.05);
+  g.add(crown);
+
+  // Pillowy outer hood rim framing the face cleanly (like the reference hood border)
+  const rimGeo = new THREE.TorusGeometry(0.72, 0.165, 18, 36);
+  rimGeo.scale(1.2, 1.0, 1.12);
+  const rim = createOutlinedPart(rimGeo, mochaMat, 0.042);
+  rim.position.set(0, 0.01, 0.27);
+  g.add(rim);
+
+  // Soft folded inner underscarf / hair curve tucked at the upper forehead edge
+  const innerArcGeo = new THREE.TorusGeometry(0.56, 0.055, 10, 22, Math.PI * 0.56);
+  const innerArc = createOutlinedPart(innerArcGeo, innerDarkMat, 0.018, { castShadow: false });
+  innerArc.position.set(0, 0.14, 0.44);
+  innerArc.rotation.z = Math.PI * 0.22;
+  g.add(innerArc);
+
+  return g;
+}
+
+function buildHijabNeckMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const chocoMat = createCelMaterial(0x8b4e2f);
+  const mochaMat = createCelMaterial(0xa8643e);
+  const deepCocoaMat = createCelMaterial(0x6b3920);
+
+  // Upper cozy scarf ring hugging beneath the chin
+  const upperWrapGeo = new THREE.TorusGeometry(0.5, 0.115, 14, 28);
+  upperWrapGeo.rotateX(Math.PI / 2);
+  upperWrapGeo.scale(1.12, 1.0, 0.94);
+  const upperWrap = createOutlinedPart(upperWrapGeo, mochaMat, 0.032);
+  upperWrap.position.set(0, 0.05, 0.02);
+  upperWrap.rotation.z = 0.08;
+  g.add(upperWrap);
+
+  // Lower overlapping scarf wrap ring
+  const lowerWrapGeo = new THREE.TorusGeometry(0.53, 0.105, 14, 28);
+  lowerWrapGeo.rotateX(Math.PI / 2);
+  lowerWrapGeo.scale(1.14, 1.0, 0.96);
+  const lowerWrap = createOutlinedPart(lowerWrapGeo, chocoMat, 0.032);
+  lowerWrap.position.set(0, -0.07, 0.04);
+  lowerWrap.rotation.z = -0.09;
+  g.add(lowerWrap);
+
+  // Soft triangular front chest drape matching the reference's flowing hijab flap
+  const drapeGeo = new THREE.ConeGeometry(0.42, 0.62, 18);
+  drapeGeo.rotateX(Math.PI);
+  drapeGeo.scale(1.18, 1.0, 0.36);
+  const drape = createOutlinedPart(drapeGeo, chocoMat, 0.032);
+  drape.position.set(0, -0.25, 0.47);
+  drape.rotation.x = -0.18;
+  g.add(drape);
+
+  // Layered diagonal pleat folds across the neck & chest drape
+  const foldGeo = new THREE.CapsuleGeometry(0.052, 0.44, 6, 12);
+  foldGeo.scale(1.0, 1.0, 0.55);
+  const fold1 = createOutlinedPart(foldGeo, deepCocoaMat, 0.018, { castShadow: false });
+  fold1.position.set(-0.04, -0.05, 0.55);
+  fold1.rotation.z = 1.32;
+  fold1.rotation.y = 0.12;
+  g.add(fold1);
+
+  const fold2 = createOutlinedPart(foldGeo, mochaMat, 0.018, { castShadow: false });
+  fold2.position.set(0.05, -0.18, 0.54);
+  fold2.rotation.z = 1.08;
+  fold2.rotation.y = -0.1;
+  g.add(fold2);
 
   return g;
 }
@@ -739,8 +845,20 @@ export function applyCharacterLoadout(rig: CharacterRig, loadout: EquippedLoadou
   clearSlot(rig.shirtSlot);
   clearSlot(rig.maskSlot);
   clearSlot(rig.uniformSlot);
+  clearSlot(rig.hijabHeadSlot);
+  clearSlot(rig.hijabNeckSlot);
 
-  if (loadout.hat) {
+  const hasHijab = loadout.hat === 'hat_hijab_brown';
+  rig.leftEar.visible = !hasHijab;
+  rig.rightEar.visible = !hasHijab;
+  if (rig.bowtieGroup) {
+    rig.bowtieGroup.visible = !hasHijab;
+  }
+
+  if (hasHijab) {
+    rig.hijabHeadSlot.add(buildHijabHeadMesh());
+    rig.hijabNeckSlot.add(buildHijabNeckMesh());
+  } else if (loadout.hat) {
     rig.hatSlot.add(buildHatMesh(loadout.hat));
   }
   if (loadout.glasses) {

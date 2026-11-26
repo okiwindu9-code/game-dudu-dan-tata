@@ -42,7 +42,7 @@ const CATEGORY_TABS: {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }[] = [
   { id: 'all', label: 'Semua', icon: Sparkles },
-  { id: 'hat', label: 'Topi', icon: Crown },
+  { id: 'hat', label: 'Topi & Hijab', icon: Crown },
   { id: 'glasses', label: 'Kacamata', icon: Glasses },
   { id: 'shirt', label: 'Baju', icon: Shirt },
   { id: 'costume', label: 'Topeng & Seragam', icon: Award },
@@ -86,6 +86,37 @@ function ShopItemArtwork({ item }: { item: ShopItem }) {
             strokeLinejoin="round"
           />
           <circle cx="32" cy="37" r="4.5" fill="#FF6B8B" stroke="#432B1D" strokeWidth="2.2" />
+        </svg>
+      )}
+      {item.id === 'hat_hijab_brown' && (
+        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
+          {/* Outer rounded chocolate hijab hood matching reference */}
+          <path
+            d="M12 31 C12 12 52 12 52 31 C52 40 46 44 38 45 L26 45 C18 44 12 40 12 31 Z"
+            fill="#8B4E2F"
+            stroke="#432B1D"
+            strokeWidth="2.8"
+          />
+          {/* Inner face opening */}
+          <ellipse cx="32" cy="29" rx="13" ry="12" fill="#FFF8EE" stroke="#432B1D" strokeWidth="2.4" />
+          {/* Inner forehead underscarf curve */}
+          <path d="M21 22 Q32 17 43 22" fill="none" stroke="#522E1A" strokeWidth="3.2" strokeLinecap="round" />
+          {/* Wrapped layered neck shawl & chest drape */}
+          <path
+            d="M17 41 Q32 45 47 41 L49 48 Q32 54 15 48 Z"
+            fill="#A8643E"
+            stroke="#432B1D"
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M19 47 Q32 52 45 47 L37 59 Q32 61 24 55 Z"
+            fill="#8B4E2F"
+            stroke="#432B1D"
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+          />
+          <path d="M23 50 Q33 53 42 49" fill="none" stroke="#6B3920" strokeWidth="2" strokeLinecap="round" />
         </svg>
       )}
       {item.id === 'glasses_cool' && (

@@ -10,11 +10,17 @@ import {
   where,
 } from 'firebase/firestore';
 import {
+  CarpetId,
   CharacterId,
   CollectibleType,
+  CostumeId,
+  EquippedLoadout,
+  GlassesId,
+  HatId,
   InGameDuration,
   LiveMatchState,
   PlayerDirectoryEntry,
+  ShirtId,
   TurnMatch,
   TurnPlayerResult,
 } from '../types/game';
@@ -43,6 +49,31 @@ function clampNum(val: number, min: number, max: number): number {
 function generateMatchId(): string {
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `M_${Date.now()}_${rand}`;
+}
+
+function sanitizeLoadout(eq?: Partial<EquippedLoadout> | null): EquippedLoadout {
+  return {
+    hat: typeof eq?.hat === 'string' && eq.hat.length > 0 ? (eq.hat.slice(0, 40) as HatId) : null,
+    glasses:
+      typeof eq?.glasses === 'string' && eq.glasses.length > 0
+        ? (eq.glasses.slice(0, 40) as GlassesId)
+        : null,
+    shirt:
+      typeof eq?.shirt === 'string' && eq.shirt.length > 0
+        ? (eq.shirt.slice(0, 40) as ShirtId)
+        : null,
+    costume:
+      typeof eq?.costume === 'string' && eq.costume.length > 0
+        ? (eq.costume.slice(0, 40) as CostumeId)
+        : null,
+  };
+}
+
+function sanitizeCarpet(raw: unknown): CarpetId {
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    return raw.trim().slice(0, 40) as CarpetId;
+  }
+  return 'default';
 }
 
 function sanitizeLiveState(ls: LiveMatchState): LiveMatchState {
@@ -96,11 +127,15 @@ function mapDocToMatch(data: Record<string, unknown>): TurnMatch {
     player1Name: String(data.player1Name || 'Player 1'),
     player1Char: data.player1Char === 'tata' ? 'tata' : 'dudu',
     player1Photo: String(data.player1Photo || ''),
+    player1Loadout: sanitizeLoadout(data.player1Loadout as Partial<EquippedLoadout> | undefined),
+    player1Carpet: sanitizeCarpet(data.player1Carpet),
     player2Uid: String(data.player2Uid || ''),
     player2Code: String(data.player2Code || ''),
     player2Name: String(data.player2Name || 'Player 2'),
     player2Char: data.player2Char === 'tata' ? 'tata' : 'dudu',
     player2Photo: String(data.player2Photo || ''),
+    player2Loadout: sanitizeLoadout(data.player2Loadout as Partial<EquippedLoadout> | undefined),
+    player2Carpet: sanitizeCarpet(data.player2Carpet),
     liveState: (data.liveState as LiveMatchState | null) ?? null,
     player1Result: (data.player1Result as TurnPlayerResult | null) ?? null,
     player2Result: (data.player2Result as TurnPlayerResult | null) ?? null,
@@ -112,6 +147,8 @@ export async function sendMabarInvite(
   user: User,
   myCode: string,
   myChar: CharacterId,
+  myLoadout: EquippedLoadout,
+  myCarpet: CarpetId,
   targetCodeRaw: string,
   durationSec: InGameDuration,
 ): Promise<{ match: TurnMatch; targetPlayer: PlayerDirectoryEntry }> {
@@ -131,6 +168,9 @@ export async function sendMabarInvite(
 
   const player1Name = sanitizeName(user.displayName);
   const player1Photo = sanitizePhoto(user.photoURL);
+  const cleanP1Loadout = sanitizeLoadout(myLoadout);
+  const cleanP1Carpet = sanitizeCarpet(myCarpet);
+  const emptyP2Loadout = sanitizeLoadout(null);
 
   const payload = {
     matchId,
@@ -141,11 +181,15 @@ export async function sendMabarInvite(
     player1Name,
     player1Char: myChar,
     player1Photo,
+    player1Loadout: cleanP1Loadout,
+    player1Carpet: cleanP1Carpet,
     player2Uid: target.uid,
     player2Code: target.playerCode,
     player2Name: sanitizeName(target.displayName),
     player2Char: target.preferredChar,
     player2Photo: sanitizePhoto(target.photoURL),
+    player2Loadout: emptyP2Loadout,
+    player2Carpet: 'default' as CarpetId,
     liveState: null,
     player1Result: null,
     player2Result: null,
@@ -171,11 +215,15 @@ export async function sendMabarInvite(
       player1Name,
       player1Char: myChar,
       player1Photo,
+      player1Loadout: cleanP1Loadout,
+      player1Carpet: cleanP1Carpet,
       player2Uid: target.uid,
       player2Code: target.playerCode,
       player2Name: sanitizeName(target.displayName),
       player2Char: target.preferredChar,
       player2Photo: sanitizePhoto(target.photoURL),
+      player2Loadout: emptyP2Loadout,
+      player2Carpet: 'default',
       liveState: null,
       player1Result: null,
       player2Result: null,
@@ -188,6 +236,8 @@ export async function acceptMabarInvite(
   matchId: string,
   user: User,
   charId: CharacterId,
+  myLoadout: EquippedLoadout,
+  myCarpet: CarpetId,
 ): Promise<void> {
   const path = `matches/${matchId}`;
   const ref = doc(db, 'matches', matchId);
@@ -197,6 +247,8 @@ export async function acceptMabarInvite(
       player2Name: sanitizeName(user.displayName),
       player2Char: charId,
       player2Photo: sanitizePhoto(user.photoURL),
+      player2Loadout: sanitizeLoadout(myLoadout),
+      player2Carpet: sanitizeCarpet(myCarpet),
       status: 'player1_turn',
       updatedAt: serverTimestamp(),
     });

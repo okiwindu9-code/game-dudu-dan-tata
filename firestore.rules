@@ -14,6 +14,10 @@ service cloud.firestore {
       return code is string && code.size() == 6 && code.matches('^[0-9]{6}$');
     }
 
+    function isValidCarpetId(carpet) {
+      return carpet is string && carpet.size() >= 1 && carpet.size() <= 40;
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -79,7 +83,7 @@ service cloud.firestore {
         && data.equippedByChar.keys().hasOnly(['dudu', 'tata'])
         && isValidEquipLoadout(data.equippedByChar.dudu)
         && isValidEquipLoadout(data.equippedByChar.tata)
-        && data.equippedCarpet is string && data.equippedCarpet.size() >= 1 && data.equippedCarpet.size() <= 40
+        && isValidCarpetId(data.equippedCarpet)
         && data.boosterCounts is map
         && data.boosterCounts.keys().hasAll(['boost_speed', 'boost_time2x'])
         && data.boosterCounts.keys().hasOnly(['boost_speed', 'boost_time2x'])
@@ -181,14 +185,18 @@ service cloud.firestore {
       return data.keys().hasAll([
           'matchId', 'durationSec', 'status',
           'player1Uid', 'player1Code', 'player1Name', 'player1Char', 'player1Photo',
+          'player1Loadout', 'player1Carpet',
           'player2Uid', 'player2Code', 'player2Name', 'player2Char', 'player2Photo',
+          'player2Loadout', 'player2Carpet',
           'liveState', 'player1Result', 'player2Result', 'winnerUid',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'matchId', 'durationSec', 'status',
           'player1Uid', 'player1Code', 'player1Name', 'player1Char', 'player1Photo',
+          'player1Loadout', 'player1Carpet',
           'player2Uid', 'player2Code', 'player2Name', 'player2Char', 'player2Photo',
+          'player2Loadout', 'player2Carpet',
           'liveState', 'player1Result', 'player2Result', 'winnerUid',
           'createdAt', 'updatedAt'
         ])
@@ -201,11 +209,15 @@ service cloud.firestore {
         && data.player1Name is string && data.player1Name.size() >= 1 && data.player1Name.size() <= 40
         && data.player1Char in ['dudu', 'tata']
         && data.player1Photo is string && data.player1Photo.size() <= 512
+        && isValidEquipLoadout(data.player1Loadout)
+        && isValidCarpetId(data.player1Carpet)
         && isValidId(data.player2Uid)
         && isValidPlayerCode(data.player2Code)
         && data.player2Name is string && data.player2Name.size() >= 1 && data.player2Name.size() <= 40
         && data.player2Char in ['dudu', 'tata']
         && data.player2Photo is string && data.player2Photo.size() <= 512
+        && isValidEquipLoadout(data.player2Loadout)
+        && isValidCarpetId(data.player2Carpet)
         && (data.liveState == null || isValidLiveState(data.liveState))
         && (data.player1Result == null || isValidTurnResult(data.player1Result))
         && (data.player2Result == null || isValidTurnResult(data.player2Result))
@@ -293,6 +305,11 @@ service cloud.firestore {
         && isValidTurnMatch(incoming(), matchId)
         && incoming().player1Uid == request.auth.uid
         && incoming().status == 'invited'
+        && incoming().player2Loadout.hat == null
+        && incoming().player2Loadout.glasses == null
+        && incoming().player2Loadout.shirt == null
+        && incoming().player2Loadout.costume == null
+        && incoming().player2Carpet == 'default'
         && incoming().liveState == null
         && incoming().player1Result == null
         && incoming().player2Result == null
@@ -311,18 +328,22 @@ service cloud.firestore {
         && incoming().player1Name == existing().player1Name
         && incoming().player1Char == existing().player1Char
         && incoming().player1Photo == existing().player1Photo
+        && incoming().player1Loadout == existing().player1Loadout
+        && incoming().player1Carpet == existing().player1Carpet
         && incoming().player2Uid == existing().player2Uid
         && incoming().player2Code == existing().player2Code
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action 1: Invited Player 2 accepts invite -> immediately enters Player 1 live turn
+          // Action 1: Invited Player 2 accepts invite -> syncs P2 skin/loadout & enters Player 1 live turn
           (
             existing().status == 'invited'
             && request.auth.uid == existing().player2Uid
             && incoming().status == 'player1_turn'
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'player2Name', 'player2Char', 'player2Photo', 'status', 'updatedAt'
+              'player2Name', 'player2Char', 'player2Photo',
+              'player2Loadout', 'player2Carpet',
+              'status', 'updatedAt'
             ])
           )
           ||

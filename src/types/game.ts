@@ -13,7 +13,7 @@ export type CollectibleType =
   | 'clock'
   | 'bomb';
 
-export type HatId = 'hat_straw' | 'hat_strawberry' | 'hat_crown';
+export type HatId = 'hat_straw' | 'hat_strawberry' | 'hat_crown' | 'hat_hijab_brown';
 export type GlassesId = 'glasses_cool' | 'glasses_round';
 export type ShirtId = 'shirt_pink' | 'shirt_mint' | 'shirt_butter';
 export type CostumeId =
@@ -64,6 +64,15 @@ export const SHOP_ITEMS: ShopItem[] = [
     description: 'Mahkota emas mini untuk sang juara buah',
     swatchColor: '#FFD166',
     accentColor: '#FF8FAB',
+  },
+  {
+    id: 'hat_hijab_brown',
+    name: 'Hijab Coklat',
+    category: 'hat',
+    priceRupiah: 140000,
+    description: 'Kerudung coklat manis lengkap lilitan leher & juntaian dada',
+    swatchColor: '#8B4E2F',
+    accentColor: '#A8643E',
   },
 
   // Aksesoris Kacamata
@@ -228,22 +237,22 @@ export const CHARACTERS: Record<CharacterId, CharacterProfile> = {
   dudu: {
     id: 'dudu',
     name: 'Dudu',
-    title: 'Panda Manis',
+    title: 'Beruang Coklat',
     traitTitle: 'Pelukan Magnet',
     traitDetail: 'Jangkauan tangkap 18% lebih lebar',
-    accentColor: '#F26B7A',
-    softBg: '#FFF0F3',
+    accentColor: '#C4936E',
+    softBg: '#FFF4E6',
     moveSpeed: 10.8,
     catchRadius: 1.54,
   },
   tata: {
     id: 'tata',
     name: 'Tata',
-    title: 'Beruang Karamel',
+    title: 'Beruang Putih',
     traitTitle: 'Langkah Lincah',
     traitDetail: 'Berlari 15% lebih cepat',
-    accentColor: '#C4936E',
-    softBg: '#FFF4E6',
+    accentColor: '#F26B7A',
+    softBg: '#FFF0F3',
     moveSpeed: 12.4,
     catchRadius: 1.3,
   },
@@ -441,11 +450,15 @@ export interface TurnMatch {
   player1Name: string;
   player1Char: CharacterId;
   player1Photo: string;
+  player1Loadout: EquippedLoadout;
+  player1Carpet: CarpetId;
   player2Uid: string;
   player2Code: string;
   player2Name: string;
   player2Char: CharacterId;
   player2Photo: string;
+  player2Loadout: EquippedLoadout;
+  player2Carpet: CarpetId;
   liveState: LiveMatchState | null;
   player1Result: TurnPlayerResult | null;
   player2Result: TurnPlayerResult | null;

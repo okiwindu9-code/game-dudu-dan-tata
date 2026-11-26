@@ -328,7 +328,7 @@ export class GameEngine {
         rig.root.position.x,
         1.2,
         rig.root.position.z + 0.3,
-        CHARACTERS[id].id === 'tata' ? 0xf8c971 : 0xf9b2b7,
+        CHARACTERS[id].id === 'dudu' ? 0xf8c971 : 0xf9b2b7,
         10,
       );
     }

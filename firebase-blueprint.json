@@ -222,6 +222,15 @@
           "description": "Inviter avatar URL.",
           "maxLength": 512
         },
+        "player1Loadout": {
+          "type": "object",
+          "description": "Equipped hat/hijab, glasses, shirt, and costume IDs worn by Player 1."
+        },
+        "player1Carpet": {
+          "type": "string",
+          "description": "Equipped arena carpet pattern ID for Player 1.",
+          "maxLength": 40
+        },
         "player2Uid": {
           "type": "string",
           "description": "Invited player Firebase Auth UID.",
@@ -251,6 +260,15 @@
           "type": "string",
           "description": "Invited player avatar URL.",
           "maxLength": 512
+        },
+        "player2Loadout": {
+          "type": "object",
+          "description": "Equipped hat/hijab, glasses, shirt, and costume IDs worn by Player 2."
+        },
+        "player2Carpet": {
+          "type": "string",
+          "description": "Equipped arena carpet pattern ID for Player 2.",
+          "maxLength": 40
         },
         "liveState": {
           "type": "object",
@@ -289,11 +307,15 @@
         "player1Name",
         "player1Char",
         "player1Photo",
+        "player1Loadout",
+        "player1Carpet",
         "player2Uid",
         "player2Code",
         "player2Name",
         "player2Char",
         "player2Photo",
+        "player2Loadout",
+        "player2Carpet",
         "liveState",
         "player1Result",
         "player2Result",
