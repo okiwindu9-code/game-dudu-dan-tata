@@ -214,6 +214,29 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isMatchParticipant(matchId) {
+      return isVerifiedUser()
+        && (
+          get(/databases/$(database)/documents/matches/$(matchId)).data.player1Uid == request.auth.uid
+          || get(/databases/$(database)/documents/matches/$(matchId)).data.player2Uid == request.auth.uid
+        );
+    }
+
+    function isActiveTurnOwner(matchId) {
+      return isVerifiedUser()
+        && (
+          (
+            get(/databases/$(database)/documents/matches/$(matchId)).data.status == 'player1_turn'
+            && get(/databases/$(database)/documents/matches/$(matchId)).data.player1Uid == request.auth.uid
+          )
+          ||
+          (
+            get(/databases/$(database)/documents/matches/$(matchId)).data.status == 'player2_turn'
+            && get(/databases/$(database)/documents/matches/$(matchId)).data.player2Uid == request.auth.uid
+          )
+        );
+    }
+
     match /users/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if false;
@@ -365,6 +388,33 @@ service cloud.firestore {
         && isVerifiedUser()
         && existing().player1Uid == request.auth.uid
         && existing().status == 'invited';
+
+      // Dedicated real-time spectator stream document (lock-free from parent TurnMatch lifecycle)
+      match /live/{liveDocId} {
+        allow get: if isValidId(matchId)
+          && isValidId(liveDocId)
+          && liveDocId == 'state'
+          && isMatchParticipant(matchId);
+        allow list: if false;
+        allow create: if isValidId(matchId)
+          && isValidId(liveDocId)
+          && liveDocId == 'state'
+          && isValidLiveState(incoming())
+          && incoming().turnUid == request.auth.uid
+          && isActiveTurnOwner(matchId);
+        allow update: if isValidId(matchId)
+          && isValidId(liveDocId)
+          && liveDocId == 'state'
+          && isValidLiveState(incoming())
+          && incoming().turnUid == request.auth.uid
+          && isActiveTurnOwner(matchId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'turnUid', 'charId', 'x', 'y', 'vx', 'vy',
+            'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
+            'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
+          ]);
+        allow delete: if false;
+      }
     }
   }
 }

@@ -223,17 +223,42 @@ export async function pushLiveMatchState(
   matchId: string,
   liveState: LiveMatchState,
 ): Promise<void> {
-  const path = `matches/${matchId}`;
-  const ref = doc(db, 'matches', matchId);
+  const path = `matches/${matchId}/live/state`;
+  const ref = doc(db, 'matches', matchId, 'live', 'state');
 
   try {
-    await updateDoc(ref, {
-      liveState: sanitizeLiveState(liveState),
-      updatedAt: serverTimestamp(),
-    });
+    await setDoc(ref, sanitizeLiveState(liveState));
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
+}
+
+export function subscribeLiveMatchState(
+  matchId: string,
+  onFrame: (frame: LiveMatchState | null) => void,
+  onError: (error: Error) => void,
+): () => void {
+  const path = `matches/${matchId}/live/state`;
+  const ref = doc(db, 'matches', matchId, 'live', 'state');
+
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (!snap.exists()) {
+        onFrame(null);
+        return;
+      }
+      const raw = snap.data() as LiveMatchState;
+      onFrame(sanitizeLiveState(raw));
+    },
+    (err) => {
+      try {
+        handleFirestoreError(err, OperationType.GET, path);
+      } catch (wrapped) {
+        onError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
+    },
+  );
 }
 
 export async function finishPlayer1Turn(

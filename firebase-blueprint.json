@@ -301,6 +301,100 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "LiveStreamFrame": {
+      "title": "LiveStreamFrame",
+      "description": "High-frequency real-time spectator snapshot stored in /matches/{matchId}/live/state without parent document contention.",
+      "type": "object",
+      "properties": {
+        "turnUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the active turn player.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "charId": {
+          "type": "string",
+          "enum": ["dudu", "tata"],
+          "description": "Active character in the 3D arena."
+        },
+        "x": {
+          "type": "number",
+          "description": "Horizontal arena position."
+        },
+        "y": {
+          "type": "number",
+          "description": "Vertical jump position."
+        },
+        "vx": {
+          "type": "number",
+          "description": "Horizontal velocity."
+        },
+        "vy": {
+          "type": "number",
+          "description": "Vertical jump velocity."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Live round score."
+        },
+        "timeLeft": {
+          "type": "integer",
+          "description": "Seconds remaining in current turn."
+        },
+        "lives": {
+          "type": "integer",
+          "description": "Remaining lives (0-3)."
+        },
+        "combo": {
+          "type": "integer",
+          "description": "Current combo count."
+        },
+        "maxCombo": {
+          "type": "integer",
+          "description": "Best combo in current turn."
+        },
+        "itemsCaught": {
+          "type": "integer",
+          "description": "Items caught in current turn."
+        },
+        "feverActive": {
+          "type": "boolean",
+          "description": "Whether Fever Mode is active."
+        },
+        "seq": {
+          "type": "integer",
+          "description": "Monotonic event sequence counter."
+        },
+        "eventLabel": {
+          "type": "string",
+          "description": "Latest catch or hazard label.",
+          "maxLength": 40
+        },
+        "items": {
+          "type": "array",
+          "description": "Bounded list (max 14) of active falling items."
+        }
+      },
+      "required": [
+        "turnUid",
+        "charId",
+        "x",
+        "y",
+        "vx",
+        "vy",
+        "score",
+        "timeLeft",
+        "lives",
+        "combo",
+        "maxCombo",
+        "itemsCaught",
+        "feverActive",
+        "seq",
+        "eventLabel",
+        "items"
+      ]
     }
   },
   "firestore": {
@@ -314,7 +408,11 @@
     },
     "/matches/{matchId}": {
       "schema": { "$ref": "#/entities/TurnMatch" },
-      "description": "Direct-invite turn-based multiplayer match with live spectator streaming."
+      "description": "Direct-invite turn-based multiplayer match lifecycle and turn results."
+    },
+    "/matches/{matchId}/live/{liveDocId}": {
+      "schema": { "$ref": "#/entities/LiveStreamFrame" },
+      "description": "Dedicated real-time 3D spectator stream document (liveDocId == 'state')."
     }
   }
 }

@@ -26,6 +26,7 @@ import {
   pushLiveMatchState,
   sendMabarInvite,
   subscribeIncomingInvites,
+  subscribeLiveMatchState,
   subscribeMatch,
 } from './firebase/matchService';
 import { GameEngine } from './three/GameEngine';
@@ -196,6 +197,7 @@ export default function App() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
   const [activeMatch, setActiveMatch] = useState<TurnMatch | null>(null);
+  const [liveFrameState, setLiveFrameState] = useState<LiveMatchState | null>(null);
   const [incomingInvites, setIncomingInvites] = useState<TurnMatch[]>([]);
   const [localRole, setLocalRole] = useState<'player1' | 'player2' | null>(null);
   const [activeDuelTurn, setActiveDuelTurn] = useState<{
@@ -324,6 +326,7 @@ export default function App() {
     setSelectedCharacter(turnChar);
     engineRef.current?.setSelectedCharacter(turnChar);
     setActiveDuelTurn(duelObj);
+    setLiveFrameState(null);
     setRoundBoosters({ speedBoost: false, time2xBoost: false });
     setBombReturnNotice(null);
     setOverModal('none');
@@ -351,6 +354,7 @@ export default function App() {
       }
       spectatorTurnKeyRef.current = turnKey;
       phaseRef.current = 'spectating';
+      setLiveFrameState(null);
       setOverModal('none');
       setShowInviteModal(false);
       setPopups([]);
@@ -385,6 +389,7 @@ export default function App() {
           activeMatchRef.current = null;
           setActiveDuelTurn(null);
           setActiveMatch(null);
+          setLiveFrameState(null);
           setActiveMatchId(null);
           localRoleRef.current = null;
           setLocalRole(null);
@@ -407,6 +412,7 @@ export default function App() {
           setActiveDuelTurn(null);
           setActiveMatchId(null);
           setActiveMatch(null);
+          setLiveFrameState(null);
           localRoleRef.current = null;
           setLocalRole(null);
           launchedMatchPhaseRef.current = null;
@@ -490,6 +496,7 @@ export default function App() {
           pendingLiveFrameRef.current = null;
           activeDuelTurnRef.current = null;
           setActiveDuelTurn(null);
+          setLiveFrameState(null);
           launchedMatchPhaseRef.current = null;
           spectatorTurnKeyRef.current = null;
           if (phaseRef.current === 'spectating' || phaseRef.current === 'playing') {
@@ -507,6 +514,59 @@ export default function App() {
 
     return () => unsub();
   }, [activeMatchId, enterSpectatorArena, startMyDuelTurn, user]);
+
+  // Dedicated real-time spectator stream from /matches/{matchId}/live/state
+  useEffect(() => {
+    if (!user || !activeMatchId || phase !== 'spectating') {
+      return;
+    }
+
+    const unsub = subscribeLiveMatchState(
+      activeMatchId,
+      (frame) => {
+        if (!frame || phaseRef.current !== 'spectating') return;
+        const curMatch = activeMatchRef.current;
+        if (!curMatch || curMatch.matchId !== activeMatchId) return;
+        if (curMatch.status !== 'player1_turn' && curMatch.status !== 'player2_turn') return;
+
+        const role =
+          localRoleRef.current ||
+          (user.uid === curMatch.player2Uid ? 'player2' : 'player1');
+
+        // Only the spectator watches the active turn owner (prevents Turn 1 frame leak into Turn 2)
+        if (curMatch.status === 'player1_turn' && role !== 'player2') return;
+        if (curMatch.status === 'player2_turn' && role !== 'player1') return;
+
+        const expectedTurnUid =
+          curMatch.status === 'player1_turn' ? curMatch.player1Uid : curMatch.player2Uid;
+        if (frame.turnUid !== expectedTurnUid) return;
+
+        engineRef.current?.applyRemoteLiveState(frame);
+        setLiveFrameState(frame);
+        setHud((prev) => ({
+          ...prev,
+          score: frame.score,
+          timeLeft: frame.timeLeft,
+          lives: frame.lives,
+          combo: frame.combo,
+          maxCombo: frame.maxCombo,
+          itemsCaught: frame.itemsCaught,
+          feverActive: frame.feverActive,
+          feverProgress: frame.feverActive
+            ? 1
+            : Math.min(1, (frame.combo % 10) / 10),
+          multiplier:
+            (1 + Math.min(4, Math.floor(frame.combo / 4))) *
+            (frame.feverActive ? 2 : 1),
+        }));
+      },
+      (err) => {
+        console.warn('Live spectator stream warning:', err);
+      },
+    );
+
+    return () => unsub();
+  }, [activeMatchId, phase, user]);
 
   const handlePopup = useCallback((popup: FloatingPopup) => {
     setPopups((prev) => [...prev.slice(-8), popup]);
@@ -995,6 +1055,7 @@ export default function App() {
     activeMatchRef.current = null;
     setActiveMatchId(null);
     setActiveMatch(null);
+    setLiveFrameState(null);
     localRoleRef.current = null;
     setLocalRole(null);
     spectatorTurnKeyRef.current = null;
@@ -1005,6 +1066,7 @@ export default function App() {
     activeMatchRef.current = null;
     setActiveMatchId(null);
     setActiveMatch(null);
+    setLiveFrameState(null);
     localRoleRef.current = null;
     setLocalRole(null);
     setMatchError(null);
@@ -1034,6 +1096,7 @@ export default function App() {
     setActiveDuelTurn(null);
     setActiveMatchId(null);
     setActiveMatch(null);
+    setLiveFrameState(null);
     localRoleRef.current = null;
     setLocalRole(null);
     launchedMatchPhaseRef.current = null;
@@ -1214,9 +1277,11 @@ export default function App() {
     (inv) => inv.matchId !== activeMatchId,
   );
 
+  const activeLiveFrame = liveFrameState || activeMatch?.liveState || null;
+
   const spectatingCharId: CharacterId =
     phase === 'spectating' && activeMatch
-      ? activeMatch.liveState?.charId ||
+      ? activeLiveFrame?.charId ||
         (activeMatch.status === 'player1_turn'
           ? activeMatch.player1Char
           : activeMatch.player2Char)
@@ -1240,7 +1305,7 @@ export default function App() {
     Boolean(activeMatch) &&
     activeMatch?.status === 'player2_turn' &&
     localRole === 'player1' &&
-    !activeMatch.liveState;
+    (!activeLiveFrame || activeLiveFrame.turnUid !== activeMatch.player2Uid);
 
   const targetScoreToBeat =
     activeMatch?.status === 'player2_turn' ? (activeMatch.player1Result?.score ?? null) : null;
