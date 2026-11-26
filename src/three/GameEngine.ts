@@ -138,6 +138,9 @@ export class GameEngine {
   private remoteTargetX = 0;
   private remoteTargetY = 0;
   private remoteTargetVx = 0;
+  private remoteTargetVy = 0;
+  private remoteStepDustTimer = 0;
+  private remoteFeverTrailTimer = 0;
   private lastRemoteSeq = -1;
   private remoteItems = new Map<
     number,
@@ -147,6 +150,7 @@ export class GameEngine {
       shadow: THREE.Mesh;
       x: number;
       y: number;
+      vy: number;
       targetX: number;
       targetY: number;
     }
@@ -296,6 +300,14 @@ export class GameEngine {
     this.virtualMoveDir = dir;
   }
 
+  private getPan(worldX: number): number {
+    return THREE.MathUtils.clamp(
+      worldX / Math.max(1, this.getLaneHalfWidth()),
+      -0.85,
+      0.85,
+    );
+  }
+
   public triggerJump() {
     if (this.phase !== 'playing' || !this.isGrounded) return;
     this.playerVy = 11.4;
@@ -303,7 +315,7 @@ export class GameEngine {
     const rig = this.getActiveRig();
     triggerSquash(rig, 3.2);
     this.particles.spawnStepDust(this.playerX, 0, 0, 0xfff0e6);
-    soundEngine.playJump();
+    soundEngine.playJump(this.getPan(this.playerX));
   }
 
   public setSelectedCharacter(id: CharacterId) {
@@ -409,6 +421,9 @@ export class GameEngine {
     this.env.spotlightRing.visible = false;
     this.phase = 'playing';
     soundEngine.startBgm(false);
+    soundEngine.playRoundStart(
+      activeBoosters.speedBoost || activeBoosters.time2xBoost,
+    );
     this.pushHud(true);
     this.emitLiveSnapshot(true);
   }
@@ -426,6 +441,9 @@ export class GameEngine {
     this.remoteTargetX = 0;
     this.remoteTargetY = 0;
     this.remoteTargetVx = 0;
+    this.remoteTargetVy = 0;
+    this.remoteStepDustTimer = 0;
+    this.remoteFeverTrailTimer = 0;
     this.lastRemoteSeq = -1;
     this.score = 0;
     this.timeLeft = durationSec;
@@ -453,8 +471,12 @@ export class GameEngine {
   public applyRemoteLiveState(frame: LiveMatchState) {
     if (this.phase !== 'spectating') return;
 
-    if (this.activeCharacter !== frame.charId) {
+    const isFirstSync = this.lastRemoteSeq === -1;
+    if (this.activeCharacter !== frame.charId || isFirstSync) {
       this.activeCharacter = frame.charId;
+      this.playerX = frame.x;
+      this.playerY = frame.y;
+      this.playerVx = frame.vx;
       const activeRig = this.getActiveRig();
       const partnerRig = this.getPartnerRig();
       activeRig.root.position.set(frame.x, frame.y, 0);
@@ -468,6 +490,7 @@ export class GameEngine {
     this.remoteTargetX = frame.x;
     this.remoteTargetY = frame.y;
     this.remoteTargetVx = frame.vx;
+    this.remoteTargetVy = frame.vy ?? 0;
     this.score = frame.score;
     this.timeLeft = frame.timeLeft;
     this.lives = frame.lives;
@@ -476,29 +499,35 @@ export class GameEngine {
     this.itemsCaught = frame.itemsCaught;
     this.feverActive = frame.feverActive;
 
-    // React visually to remote catch / hazard events
+    // React visually & audibly to remote catch / hazard events
     if (frame.seq > this.lastRemoteSeq) {
-      const isFirstSync = this.lastRemoteSeq === -1;
       this.lastRemoteSeq = frame.seq;
       if (!isFirstSync && frame.eventLabel) {
         const rig = this.getActiveRig();
         const isBomb = frame.eventLabel.includes('Nyawa');
+        const pan = this.getPan(frame.x);
         if (isBomb) {
           rig.dizzyTimer = 0.65;
           triggerSquash(rig, -4.0);
           this.cameraShake = 0.95;
-          this.particles.burst(frame.x, frame.y + 1.0, 0.2, 0x3b302a, 14, true);
+          this.particles.burst(frame.x, frame.y + 1.0, 0.2, 0x3b302a, 16, true);
+          this.particles.spawnRing(frame.x, frame.y + 1.0, 0.25, 0xff595e, 2.8);
           this.emitPopup(frame.x, frame.y + 1.7, frame.eventLabel, 'hazard');
+          soundEngine.playSpectatorCatch(true, pan);
         } else {
           rig.happyTimer = 0.45;
           triggerSquash(rig, 2.4);
-          this.particles.burst(frame.x, frame.y + 1.1, 0.2, 0xffd166, 10, false);
+          this.particles.burst(frame.x, frame.y + 1.1, 0.2, 0xffd166, 12, false);
+          if (frame.eventLabel.includes('PESTA')) {
+            this.particles.spawnRing(frame.x, frame.y + 1.1, 0.25, 0xffe066, 3.0);
+          }
           this.emitPopup(
             frame.x,
             frame.y + 1.7,
             frame.eventLabel,
             frame.eventLabel.includes('PESTA') ? 'fever' : 'points',
           );
+          soundEngine.playSpectatorCatch(false, pan);
         }
       }
     }
@@ -524,6 +553,7 @@ export class GameEngine {
           shadow,
           x: remoteItem.x,
           y: remoteItem.y,
+          vy: info.isRare ? 5.2 : 4.5,
           targetX: remoteItem.x,
           targetY: remoteItem.y,
         });
@@ -534,7 +564,7 @@ export class GameEngine {
       if (!incomingIds.has(id)) {
         const info = COLLECTIBLE_INFO[entry.type];
         if (entry.y > 0.7) {
-          this.particles.burst(entry.x, entry.y, 0.15, info.color, 8, info.isHazard);
+          this.particles.burst(entry.x, entry.y, 0.15, info.color, 10, info.isHazard);
         }
         this.scene.remove(entry.mesh);
         this.scene.remove(entry.shadow);
@@ -598,7 +628,7 @@ export class GameEngine {
 
   private emitLiveSnapshot(force = false) {
     if (!this.streamLiveEnabled || !this.callbacks.onLiveFrame) return;
-    if (!force && this.elapsed - this.lastLivePush < 0.19) return;
+    if (!force && this.elapsed - this.lastLivePush < 0.11) return;
     this.lastLivePush = this.elapsed;
 
     const eventLabel = this.pendingEventLabel;
@@ -609,6 +639,7 @@ export class GameEngine {
       x: this.playerX,
       y: this.playerY,
       vx: this.playerVx,
+      vy: this.playerVy,
       score: this.score,
       timeLeft: Math.max(0, Math.ceil(this.timeLeft)),
       lives: this.lives,
@@ -876,7 +907,7 @@ export class GameEngine {
         this.isGrounded = true;
         triggerSquash(activeRig, -3.4);
         this.particles.spawnStepDust(this.playerX, 0, 0, 0xfff0e6);
-        soundEngine.playLand();
+        soundEngine.playLand(this.getPan(this.playerX));
       }
     }
 
@@ -1016,6 +1047,12 @@ export class GameEngine {
     this.camLookAt.z = THREE.MathUtils.damp(this.camLookAt.z, 0, 6, dt);
     this.camera.lookAt(this.camLookAt);
 
+    const targetFov = this.feverActive ? 36.2 : 34;
+    if (Math.abs(this.camera.fov - targetFov) > 0.03) {
+      this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, 6, dt);
+      this.camera.updateProjectionMatrix();
+    }
+
     this.pushHud(false);
     this.emitLiveSnapshot(false);
   }
@@ -1024,22 +1061,50 @@ export class GameEngine {
     const activeRig = this.getActiveRig();
     const partnerRig = this.getPartnerRig();
 
-    // Smooth extrapolation + damping between ~200ms network snapshots
+    // Smooth extrapolation + damping between live ~110ms network snapshots
     const laneHalf = this.getLaneHalfWidth();
     this.remoteTargetX = THREE.MathUtils.clamp(
-      this.remoteTargetX + this.remoteTargetVx * dt * 0.45,
+      this.remoteTargetX + this.remoteTargetVx * dt * 0.55,
       -laneHalf,
       laneHalf,
     );
+    if (this.remoteTargetY > 0.01 || this.remoteTargetVy > 0.05) {
+      this.remoteTargetVy -= 30.0 * dt;
+      this.remoteTargetY = Math.max(0, this.remoteTargetY + this.remoteTargetVy * dt * 0.55);
+      if (this.remoteTargetY <= 0) {
+        this.remoteTargetVy = 0;
+      }
+    }
 
-    this.playerX = THREE.MathUtils.damp(this.playerX, this.remoteTargetX, 14, dt);
-    this.playerY = THREE.MathUtils.damp(this.playerY, this.remoteTargetY, 16, dt);
-    this.playerVx = THREE.MathUtils.damp(this.playerVx, this.remoteTargetVx, 12, dt);
+    this.playerX = THREE.MathUtils.damp(this.playerX, this.remoteTargetX, 16, dt);
+    this.playerY = THREE.MathUtils.damp(this.playerY, this.remoteTargetY, 18, dt);
+    this.playerVx = THREE.MathUtils.damp(this.playerVx, this.remoteTargetVx, 14, dt);
+
+    if (this.playerY < 0.08 && Math.abs(this.playerVx) > 3.0) {
+      this.remoteStepDustTimer -= dt;
+      if (this.remoteStepDustTimer <= 0) {
+        this.remoteStepDustTimer = 0.14;
+        this.particles.spawnStepDust(this.playerX, 0, -0.1, 0xf7ebd9);
+      }
+    }
+
+    if (this.feverActive) {
+      this.remoteFeverTrailTimer -= dt;
+      if (this.remoteFeverTrailTimer <= 0) {
+        this.remoteFeverTrailTimer = 0.09;
+        this.particles.spawnStepDust(
+          this.playerX + (Math.random() - 0.5) * 0.6,
+          this.playerY + 0.8 + Math.random() * 0.7,
+          0.1,
+          0xffe066,
+        );
+      }
+    }
 
     activeRig.root.position.set(this.playerX, this.playerY, 0);
     animateCharacter(activeRig, dt, this.elapsed, {
       vx: this.playerVx,
-      vy: 0,
+      vy: this.remoteTargetVy,
       isGrounded: this.playerY < 0.08,
     });
 
@@ -1051,9 +1116,9 @@ export class GameEngine {
     });
 
     for (const entry of this.remoteItems.values()) {
-      entry.targetY -= 4.2 * dt;
-      entry.x = THREE.MathUtils.damp(entry.x, entry.targetX, 12, dt);
-      entry.y = THREE.MathUtils.damp(entry.y, entry.targetY, 12, dt);
+      entry.targetY -= entry.vy * dt;
+      entry.x = THREE.MathUtils.damp(entry.x, entry.targetX, 14, dt);
+      entry.y = THREE.MathUtils.damp(entry.y, entry.targetY, 14, dt);
       entry.mesh.position.set(entry.x, entry.y, 0);
       entry.mesh.rotation.y += 1.6 * dt;
       entry.shadow.position.x = entry.x;
@@ -1095,6 +1160,7 @@ export class GameEngine {
   private handleCatch(item: FallingItem): boolean {
     const info = COLLECTIBLE_INFO[item.type];
     const rig = this.getActiveRig();
+    const pan = this.getPan(item.x);
 
     if (info.isHazard) {
       this.score = Math.max(0, this.score + info.points);
@@ -1108,9 +1174,10 @@ export class GameEngine {
       this.cameraShake = 1.25;
       rig.dizzyTimer = 0.7;
       triggerSquash(rig, -4.5);
-      this.particles.burst(item.x, item.y, 0.2, info.color, 18, true);
+      this.particles.burst(item.x, item.y, 0.2, info.color, 22, true);
+      this.particles.spawnRing(item.x, item.y, 0.25, 0xff595e, 3.1);
       this.emitPopup(item.x, item.y + 0.8, `-1 Nyawa!`, 'hazard');
-      soundEngine.playHazard();
+      soundEngine.playHazard(pan);
       this.callbacks.onHazardHit?.();
       this.liveSeq += 1;
       this.pendingEventLabel = '-1 Nyawa!';
@@ -1136,8 +1203,9 @@ export class GameEngine {
       if (this.feverStreak >= 10) {
         this.feverActive = true;
         this.feverTimeLeft = 6.0;
-        this.cameraShake = 0.55;
+        this.cameraShake = 0.6;
         feverJustStarted = true;
+        this.particles.spawnRing(this.playerX, this.playerY + 1.2, 0.3, 0xffe066, 3.4);
         this.emitPopup(this.playerX, this.playerY + 2.6, 'PESTA MANIS x2!', 'fever');
         soundEngine.playFeverStart();
         soundEngine.setBgmFever(true);
@@ -1150,14 +1218,22 @@ export class GameEngine {
 
     if (info.bonusTime > 0) {
       this.timeLeft += info.bonusTime;
-      this.cameraShake = Math.max(this.cameraShake, 0.25);
+      this.cameraShake = Math.max(this.cameraShake, 0.28);
+      this.particles.spawnRing(item.x, item.y, 0.25, 0x6bd47f, 2.5);
       this.emitPopup(item.x, item.y + 0.8, `+${info.bonusTime} Detik!`, 'time');
       this.pendingEventLabel = `+${info.bonusTime} Detik!`;
-      soundEngine.playClockBonus();
+      soundEngine.playClockBonus(pan);
     } else {
       const suffix = mult > 1 ? ` (x${mult})` : '';
       const label = `+${earned}${suffix}`;
-      this.cameraShake = Math.max(this.cameraShake, info.isRare ? 0.28 : 0.12);
+      this.cameraShake = Math.max(this.cameraShake, info.isRare ? 0.32 : 0.12);
+      if (info.isRare) {
+        this.particles.spawnRing(item.x, item.y, 0.25, info.color, 2.4);
+      } else if (this.combo > 0 && this.combo % 5 === 0 && !feverJustStarted) {
+        this.particles.spawnRing(this.playerX, this.playerY + 1.2, 0.25, 0xff8fab, 2.6);
+        this.emitPopup(this.playerX, this.playerY + 2.2, `KOMBO ${this.combo}x!`, 'bonus');
+        soundEngine.playComboMilestone(this.combo);
+      }
       this.emitPopup(
         item.x,
         item.y + 0.7,
@@ -1165,13 +1241,13 @@ export class GameEngine {
         info.isRare ? 'bonus' : 'points',
       );
       this.pendingEventLabel = feverJustStarted ? 'PESTA MANIS x2!' : label;
-      soundEngine.playCatch(this.combo, info.isRare);
+      soundEngine.playCatch(this.combo, info.isRare, pan);
     }
 
     this.liveSeq += 1;
     rig.happyTimer = 0.45;
     triggerSquash(rig, 2.6);
-    this.particles.burst(item.x, item.y, 0.2, info.color, info.isRare ? 18 : 12, false);
+    this.particles.burst(item.x, item.y, 0.2, info.color, info.isRare ? 20 : 14, false);
     this.pushHud(true);
     this.emitLiveSnapshot(true);
     return false;

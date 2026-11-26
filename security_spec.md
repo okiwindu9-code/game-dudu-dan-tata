@@ -1,8 +1,8 @@
 # Security Specification — Dudu & Tata Cloud Profile, Player ID Directory & Live Turn-Based Mabar
 
 ## 1. Data Invariants
-1. **Owner-Only Profile & Immutable Player ID**: Only the verified owner (`request.auth.uid == userId && email_verified == true`) can read/create/update `/users/{userId}`. Once `playerCode` (`^[0-9]{6}$`) is assigned, it cannot be changed.
-2. **PII Isolation via Split Public Directory**: Emails, Rupiah balances, and item inventories stay strictly private inside `/users/{userId}`. `/playerDirectory/{playerCode}` exposes only public display cards (`playerCode`, `uid`, `displayName`, `photoURL`, `preferredChar`, `duduBest`, `tataBest`) and forbids `list` queries so players cannot scrape the full directory.
+1. **Owner-Only Profile & Immutable Player ID**: Only the verified owner (`request.auth.uid == userId && email_verified == true`) can read/create/update `/users/{userId}` (including their bounded `friends` list of up to 30 entries). Once `playerCode` (`^[0-9]{6}$`) is assigned, it cannot be changed.
+2. **PII Isolation via Split Public Directory**: Emails, Rupiah balances, friend lists, and item inventories stay strictly private inside `/users/{userId}`. `/playerDirectory/{playerCode}` exposes only public display cards (`playerCode`, `uid`, `displayName`, `photoURL`, `preferredChar`, `duduBest`, `tataBest`) and forbids `list` queries so players cannot scrape the full directory.
 3. **Participant-Only Match Access & Safe Invite Inbox**: `/matches/{matchId}` `get` is strictly restricted to `player1Uid` or `player2Uid`. `list` is restricted to `resource.data.player2Uid == request.auth.uid` so invited players receive real-time invites without scraping other users' matches.
 4. **Turn-Based Live Stream Authority**: Only `player1Uid` may write `liveState` during `player1_turn` (and transition to `player2_turn` with `player1Result`), and only `player2Uid` may write `liveState` during `player2_turn` (and transition to `finished` with `player2Result` and `winnerUid`).
 5. **Terminal State Locking**: Once a match reaches `finished` or `declined`, no further updates are permitted.

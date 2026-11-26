@@ -1,4 +1,4 @@
-// Rich procedural Web Audio API sound & haptic vibration engine (zero external files)
+// Rich procedural Web Audio API sound & haptic vibration engine with spatial panning & noise bursts
 
 const PENTATONIC_RATIOS = [
   1.0, // C
@@ -12,7 +12,7 @@ const PENTATONIC_RATIOS = [
   3.0, // G5
 ];
 
-// Gentle cheerful 8-bar kawaii marimba melody (Hz)
+// Cheerful 16-step marimba melody (Hz)
 const BGM_NOTES = [
   523.25, 659.25, 783.99, 659.25,
   587.33, 698.46, 880.0, 698.46,
@@ -23,6 +23,7 @@ const BGM_NOTES = [
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
   private vibrationEnabled = true;
 
@@ -41,22 +42,32 @@ class SoundEngine {
       if (AudioCtx) {
         this.ctx = new AudioCtx();
         const comp = this.ctx.createDynamicsCompressor();
-        comp.threshold.value = -16;
-        comp.knee.value = 18;
+        comp.threshold.value = -14;
+        comp.knee.value = 16;
         comp.ratio.value = 4;
-        comp.attack.value = 0.005;
-        comp.release.value = 0.15;
+        comp.attack.value = 0.004;
+        comp.release.value = 0.14;
 
         const lowpass = this.ctx.createBiquadFilter();
         lowpass.type = 'lowpass';
-        lowpass.frequency.value = 5200;
+        lowpass.frequency.value = 6400;
 
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.85;
+        this.masterGain.gain.value = 0.92;
 
         this.masterGain.connect(lowpass);
         lowpass.connect(comp);
         comp.connect(this.ctx.destination);
+
+        // Pre-build 0.5s white noise buffer for sparkles, whooshes, and explosions
+        const sampleRate = this.ctx.sampleRate;
+        const len = Math.floor(sampleRate * 0.5);
+        const buf = this.ctx.createBuffer(1, len, sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        this.noiseBuffer = buf;
       }
     }
     if (!this.ctx || !this.masterGain) return null;
@@ -100,6 +111,22 @@ class SoundEngine {
     }
   }
 
+  private connectWithPan(
+    ctx: AudioContext,
+    out: AudioNode,
+    source: AudioNode,
+    pan = 0,
+  ) {
+    if (typeof ctx.createStereoPanner === 'function' && Math.abs(pan) > 0.02) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-0.85, Math.min(0.85, pan));
+      source.connect(panner);
+      panner.connect(out);
+    } else {
+      source.connect(out);
+    }
+  }
+
   private playTone(
     freq: number,
     options: {
@@ -109,6 +136,7 @@ class SoundEngine {
       volume?: number;
       endFreq?: number;
       overtoneVol?: number;
+      pan?: number;
     } = {},
   ) {
     const graph = this.ensureGraph();
@@ -117,7 +145,8 @@ class SoundEngine {
 
     const delay = options.delay ?? 0;
     const duration = options.duration ?? 0.14;
-    const volume = options.volume ?? 0.12;
+    const volume = options.volume ?? 0.13;
+    const pan = options.pan ?? 0;
     const start = ctx.currentTime + delay;
 
     const osc = ctx.createOscillator();
@@ -132,28 +161,71 @@ class SoundEngine {
     }
 
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.linearRampToValueAtTime(volume, start + 0.01);
+    gain.gain.linearRampToValueAtTime(volume, start + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
     osc.connect(gain);
-    gain.connect(out);
+    this.connectWithPan(ctx, out, gain, pan);
     osc.start(start);
     osc.stop(start + duration + 0.02);
 
-    // Optional soft bell harmonic overtone
     if (options.overtoneVol && options.overtoneVol > 0) {
       const ov = ctx.createOscillator();
       const ovGain = ctx.createGain();
       ov.type = 'sine';
       ov.frequency.setValueAtTime(freq * 2, start);
       ovGain.gain.setValueAtTime(0.0001, start);
-      ovGain.gain.linearRampToValueAtTime(options.overtoneVol, start + 0.008);
-      ovGain.gain.exponentialRampToValueAtTime(0.0001, start + duration * 0.65);
+      ovGain.gain.linearRampToValueAtTime(options.overtoneVol, start + 0.006);
+      ovGain.gain.exponentialRampToValueAtTime(0.0001, start + duration * 0.7);
       ov.connect(ovGain);
-      ovGain.connect(out);
+      this.connectWithPan(ctx, out, ovGain, pan);
       ov.start(start);
-      ov.stop(start + duration * 0.7);
+      ov.stop(start + duration * 0.72);
     }
+  }
+
+  private playNoiseBurst(options: {
+    delay?: number;
+    duration?: number;
+    volume?: number;
+    filterType?: BiquadFilterType;
+    freq?: number;
+    endFreq?: number;
+    pan?: number;
+  } = {}) {
+    const graph = this.ensureGraph();
+    if (!graph || !this.noiseBuffer) return;
+    const { ctx, out } = graph;
+
+    const delay = options.delay ?? 0;
+    const duration = options.duration ?? 0.12;
+    const volume = options.volume ?? 0.08;
+    const start = ctx.currentTime + delay;
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = options.filterType ?? 'bandpass';
+    filter.frequency.setValueAtTime(options.freq ?? 1600, start);
+    if (options.endFreq) {
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(80, options.endFreq),
+        start + duration,
+      );
+    }
+    filter.Q.value = 1.4;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(volume, start + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    src.connect(filter);
+    filter.connect(gain);
+    this.connectWithPan(ctx, out, gain, options.pan ?? 0);
+    src.start(start);
+    src.stop(start + duration + 0.02);
   }
 
   public startBgm(fever = false) {
@@ -179,108 +251,197 @@ class SoundEngine {
     if (!this.bgmPlaying) return;
     if (!this.muted) {
       const freq = BGM_NOTES[this.bgmStep % BGM_NOTES.length];
-      const transpose = this.bgmFever ? 1.12246 : 1.0; // +2 semitones during Fever!
+      const transpose = this.bgmFever ? 1.12246 : 1.0;
       this.playTone(freq * transpose, {
         type: 'sine',
         duration: 0.22,
-        volume: 0.032,
-        overtoneVol: 0.01,
+        volume: this.bgmFever ? 0.042 : 0.032,
+        overtoneVol: 0.012,
       });
 
-      // Soft bass pulse every 4 beats
       if (this.bgmStep % 4 === 0) {
-        this.playTone((freq * 0.25) * transpose, {
+        this.playTone(freq * 0.25 * transpose, {
           type: 'triangle',
           duration: 0.34,
-          volume: 0.028,
+          volume: this.bgmFever ? 0.038 : 0.028,
+        });
+      }
+
+      // Crisp gentle shaker pulse on off-beats during Fever Mode
+      if (this.bgmFever && this.bgmStep % 2 === 1) {
+        this.playNoiseBurst({
+          duration: 0.045,
+          volume: 0.018,
+          filterType: 'highpass',
+          freq: 4200,
         });
       }
     }
 
     this.bgmStep = (this.bgmStep + 1) % BGM_NOTES.length;
-    const stepMs = this.bgmFever ? 210 : 280;
+    const stepMs = this.bgmFever ? 200 : 275;
     this.bgmTimer = window.setTimeout(this.scheduleNextBgmStep, stepMs);
   };
 
   public playClick() {
-    this.playTone(540, {
+    this.playTone(580, {
       type: 'sine',
-      endFreq: 760,
-      duration: 0.065,
+      endFreq: 820,
+      duration: 0.06,
       volume: 0.08,
-      overtoneVol: 0.02,
+      overtoneVol: 0.025,
     });
     this.vibrate(10);
   }
 
-  public playJump() {
-    this.playTone(250, {
-      type: 'triangle',
-      endFreq: 590,
-      duration: 0.14,
-      volume: 0.12,
+  public playRoundStart(boosted = false) {
+    const notes = boosted
+      ? [523.25, 659.25, 783.99, 1046.5, 1318.51]
+      : [440, 554.37, 659.25, 880];
+    notes.forEach((f, i) => {
+      this.playTone(f, {
+        type: 'triangle',
+        delay: i * 0.05,
+        duration: 0.18,
+        volume: 0.11,
+        overtoneVol: 0.04,
+      });
     });
-    this.playTone(375, {
+    this.vibrate([18, 22, 28]);
+  }
+
+  public playJump(pan = 0) {
+    this.playTone(255, {
+      type: 'triangle',
+      endFreq: 640,
+      duration: 0.15,
+      volume: 0.13,
+      pan,
+    });
+    this.playTone(410, {
       type: 'sine',
       delay: 0.02,
-      endFreq: 720,
-      duration: 0.1,
-      volume: 0.06,
+      endFreq: 780,
+      duration: 0.11,
+      volume: 0.07,
+      pan,
+    });
+    this.playNoiseBurst({
+      duration: 0.09,
+      volume: 0.035,
+      filterType: 'bandpass',
+      freq: 900,
+      endFreq: 2600,
+      pan,
     });
     this.vibrate(16);
   }
 
-  public playLand() {
-    this.playTone(130, {
+  public playLand(pan = 0) {
+    this.playTone(135, {
       type: 'sine',
-      endFreq: 75,
-      duration: 0.06,
-      volume: 0.06,
+      endFreq: 68,
+      duration: 0.07,
+      volume: 0.065,
+      pan,
     });
   }
 
-  public playCatch(combo: number, isRare = false) {
+  public playCatch(combo: number, isRare = false, pan = 0) {
     const idx = Math.min(combo, PENTATONIC_RATIOS.length - 1);
     const base = 392 * PENTATONIC_RATIOS[idx];
 
     this.playTone(base, {
       type: 'triangle',
-      endFreq: base * 1.08,
-      duration: 0.13,
-      volume: 0.13,
-      overtoneVol: 0.05,
+      endFreq: base * 1.1,
+      duration: 0.14,
+      volume: 0.14,
+      overtoneVol: 0.06,
+      pan,
     });
 
     if (isRare) {
       this.playTone(base * 1.25, {
         type: 'sine',
-        delay: 0.05,
-        duration: 0.16,
-        volume: 0.11,
-        overtoneVol: 0.05,
+        delay: 0.045,
+        duration: 0.17,
+        volume: 0.12,
+        overtoneVol: 0.06,
+        pan,
       });
       this.playTone(base * 1.5, {
         type: 'sine',
-        delay: 0.1,
-        duration: 0.22,
-        volume: 0.12,
-        overtoneVol: 0.06,
+        delay: 0.09,
+        duration: 0.24,
+        volume: 0.13,
+        overtoneVol: 0.07,
+        pan,
       });
-      this.vibrate([22, 28, 36]);
+      this.playNoiseBurst({
+        delay: 0.02,
+        duration: 0.11,
+        volume: 0.045,
+        filterType: 'highpass',
+        freq: 3600,
+        pan,
+      });
+      this.vibrate([22, 25, 38]);
     } else {
+      this.playNoiseBurst({
+        duration: 0.05,
+        volume: 0.022,
+        filterType: 'highpass',
+        freq: 3000,
+        pan,
+      });
       this.vibrate(14);
     }
   }
 
-  public playClockBonus() {
+  public playComboMilestone(combo: number) {
+    const root = combo >= 15 ? 659.25 : 587.33;
+    [1, 1.25, 1.5].forEach((m, i) => {
+      this.playTone(root * m, {
+        type: 'sine',
+        delay: i * 0.04,
+        duration: 0.18,
+        volume: 0.09,
+        overtoneVol: 0.04,
+      });
+    });
+  }
+
+  public playSpectatorCatch(isBomb: boolean, pan = 0) {
+    if (isBomb) {
+      this.playTone(165, {
+        type: 'sawtooth',
+        endFreq: 70,
+        duration: 0.18,
+        volume: 0.07,
+        pan,
+      });
+      return;
+    }
+    this.playTone(620, {
+      type: 'sine',
+      endFreq: 860,
+      duration: 0.1,
+      volume: 0.055,
+      overtoneVol: 0.02,
+      pan,
+    });
+  }
+
+  public playClockBonus(pan = 0) {
     const notes = [587.33, 739.99, 880, 1174.66];
     notes.forEach((f, i) => {
       this.playTone(f, {
         type: 'sine',
-        delay: i * 0.05,
-        duration: 0.18,
-        volume: 0.11,
-        overtoneVol: 0.04,
+        delay: i * 0.045,
+        duration: 0.2,
+        volume: 0.12,
+        overtoneVol: 0.05,
+        pan,
       });
     });
     this.vibrate([20, 25, 35]);
@@ -291,37 +452,55 @@ class SoundEngine {
     notes.forEach((f, i) => {
       this.playTone(f, {
         type: 'triangle',
-        delay: i * 0.055,
-        duration: 0.24,
-        volume: 0.13,
-        overtoneVol: 0.06,
+        delay: i * 0.05,
+        duration: 0.26,
+        volume: 0.14,
+        overtoneVol: 0.07,
       });
     });
-    this.vibrate([30, 30, 40, 30, 60]);
+    this.playNoiseBurst({
+      delay: 0.05,
+      duration: 0.25,
+      volume: 0.055,
+      filterType: 'highpass',
+      freq: 3200,
+    });
+    this.vibrate([30, 30, 40, 30, 65]);
   }
 
-  public playHazard() {
-    this.playTone(195, {
+  public playHazard(pan = 0) {
+    // Punchy sub-bass thud + crunchy crackle + descending cartoon buzz
+    this.playTone(145, {
+      type: 'sine',
+      endFreq: 44,
+      duration: 0.28,
+      volume: 0.2,
+      pan,
+    });
+    this.playTone(210, {
       type: 'sawtooth',
-      endFreq: 72,
+      endFreq: 68,
       duration: 0.24,
       volume: 0.12,
+      pan,
     });
-    this.playTone(135, {
-      type: 'square',
-      delay: 0.03,
-      endFreq: 55,
-      duration: 0.2,
-      volume: 0.07,
+    this.playNoiseBurst({
+      duration: 0.24,
+      volume: 0.14,
+      filterType: 'lowpass',
+      freq: 1800,
+      endFreq: 260,
+      pan,
     });
-    this.vibrate([70, 40, 95]);
+    this.vibrate([75, 40, 105]);
   }
 
   public playTick() {
-    this.playTone(880, {
+    this.playTone(920, {
       type: 'sine',
       duration: 0.055,
-      volume: 0.07,
+      volume: 0.08,
+      overtoneVol: 0.02,
     });
   }
 
@@ -329,17 +508,17 @@ class SoundEngine {
     this.playTone(987.77, {
       type: 'sine',
       duration: 0.09,
-      volume: 0.12,
-      overtoneVol: 0.05,
+      volume: 0.13,
+      overtoneVol: 0.06,
     });
     this.playTone(1318.51, {
       type: 'sine',
-      delay: 0.075,
+      delay: 0.07,
       duration: 0.28,
-      volume: 0.14,
-      overtoneVol: 0.07,
+      volume: 0.15,
+      overtoneVol: 0.08,
     });
-    this.vibrate([20, 30, 40]);
+    this.vibrate([20, 30, 42]);
   }
 
   public playGameOver() {
@@ -348,10 +527,10 @@ class SoundEngine {
     notes.forEach((f, i) => {
       this.playTone(f, {
         type: 'triangle',
-        delay: i * 0.1,
-        duration: i === notes.length - 1 ? 0.45 : 0.2,
-        volume: 0.13,
-        overtoneVol: 0.05,
+        delay: i * 0.095,
+        duration: i === notes.length - 1 ? 0.5 : 0.22,
+        volume: 0.14,
+        overtoneVol: 0.06,
       });
     });
     this.vibrate([30, 40, 60]);

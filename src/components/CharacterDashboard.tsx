@@ -71,6 +71,8 @@ interface CharacterDashboardProps {
   onGoogleLogout: () => void;
   onOpenInviteModal: () => void;
   onCloseInviteModal: () => void;
+  onAddFriend: (targetCode: string) => Promise<void>;
+  onRemoveFriend: (playerCode: string) => void;
   onSendInvite: (targetCode: string, myChar: CharacterId, duration: InGameDuration) => void;
   onAcceptInvite: (match: TurnMatch, myChar: CharacterId) => void;
   onDeclineInvite: (matchId: string) => void;
@@ -117,6 +119,8 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
   onGoogleLogout,
   onOpenInviteModal,
   onCloseInviteModal,
+  onAddFriend,
+  onRemoveFriend,
   onSendInvite,
   onAcceptInvite,
   onDeclineInvite,
@@ -893,6 +897,7 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
         <InviteModal
           user={user}
           playerCode={playerCode}
+          friends={saveStore.friends}
           authBusy={authBusy}
           selectedCharacter={selectedCharacter}
           durationMode={durationMode}
@@ -902,6 +907,8 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
           authError={authError}
           matchBusy={matchBusy}
           onGoogleLogin={onGoogleLogin}
+          onAddFriend={onAddFriend}
+          onRemoveFriend={onRemoveFriend}
           onSendInvite={onSendInvite}
           onAcceptInvite={onAcceptInvite}
           onDeclineInvite={onDeclineInvite}

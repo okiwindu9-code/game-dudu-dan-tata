@@ -61,6 +61,7 @@ function sanitizeLiveState(ls: LiveMatchState): LiveMatchState {
     x: clampNum(ls.x, -15, 15),
     y: clampNum(ls.y, -1, 15),
     vx: clampNum(ls.vx, -40, 40),
+    vy: clampNum(ls.vy ?? 0, -40, 40),
     score: clampInt(ls.score, 0, 10000000),
     timeLeft: clampInt(ls.timeLeft, 0, 300),
     lives: clampInt(ls.lives, 0, 3),

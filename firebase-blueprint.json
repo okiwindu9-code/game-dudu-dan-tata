@@ -75,6 +75,10 @@
           "type": "object",
           "description": "Whether speedBoost and time2xBoost are armed for next round."
         },
+        "friends": {
+          "type": "array",
+          "description": "Saved mabar friends (up to 30) added via 6-digit playerCode for quick invites."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -102,6 +106,7 @@
         "equippedCarpet",
         "boosterCounts",
         "armedBoosters",
+        "friends",
         "createdAt",
         "updatedAt"
       ]

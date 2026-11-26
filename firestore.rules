@@ -50,7 +50,7 @@ service cloud.firestore {
           'tataBest', 'duduBest', 'bestCombo',
           'totalPoints', 'rupiahBalance', 'exchangeCount',
           'ownedItems', 'equippedByChar', 'equippedCarpet',
-          'boosterCounts', 'armedBoosters',
+          'boosterCounts', 'armedBoosters', 'friends',
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
@@ -58,7 +58,7 @@ service cloud.firestore {
           'tataBest', 'duduBest', 'bestCombo',
           'totalPoints', 'rupiahBalance', 'exchangeCount',
           'ownedItems', 'equippedByChar', 'equippedCarpet',
-          'boosterCounts', 'armedBoosters',
+          'boosterCounts', 'armedBoosters', 'friends',
           'createdAt', 'updatedAt'
         ])
         && data.uid == userId
@@ -90,6 +90,18 @@ service cloud.firestore {
         && data.armedBoosters.keys().hasOnly(['speedBoost', 'time2xBoost'])
         && data.armedBoosters.speedBoost is bool
         && data.armedBoosters.time2xBoost is bool
+        && data.friends is list && data.friends.size() <= 30
+        && (data.friends.size() == 0 || (
+          data.friends[0] is map
+          && data.friends[0].keys().hasAll(['playerCode', 'uid', 'displayName', 'photoURL', 'preferredChar', 'addedAt'])
+          && data.friends[0].keys().hasOnly(['playerCode', 'uid', 'displayName', 'photoURL', 'preferredChar', 'addedAt'])
+          && isValidPlayerCode(data.friends[0].playerCode)
+          && isValidId(data.friends[0].uid)
+          && data.friends[0].displayName is string && data.friends[0].displayName.size() >= 1 && data.friends[0].displayName.size() <= 40
+          && data.friends[0].photoURL is string && data.friends[0].photoURL.size() <= 512
+          && data.friends[0].preferredChar in ['dudu', 'tata']
+          && data.friends[0].addedAt is int && data.friends[0].addedAt >= 0
+        ))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -129,12 +141,12 @@ service cloud.firestore {
     function isValidLiveState(ls) {
       return ls is map
         && ls.keys().hasAll([
-          'turnUid', 'charId', 'x', 'y', 'vx',
+          'turnUid', 'charId', 'x', 'y', 'vx', 'vy',
           'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
           'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
         ])
         && ls.keys().hasOnly([
-          'turnUid', 'charId', 'x', 'y', 'vx',
+          'turnUid', 'charId', 'x', 'y', 'vx', 'vy',
           'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
           'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
         ])
@@ -143,6 +155,7 @@ service cloud.firestore {
         && ls.x is number && ls.x >= -15 && ls.x <= 15
         && ls.y is number && ls.y >= -1 && ls.y <= 15
         && ls.vx is number && ls.vx >= -40 && ls.vx <= 40
+        && ls.vy is number && ls.vy >= -40 && ls.vy <= 40
         && ls.score is int && ls.score >= 0 && ls.score <= 10000000
         && ls.timeLeft is int && ls.timeLeft >= 0 && ls.timeLeft <= 300
         && ls.lives is int && ls.lives >= 0 && ls.lives <= 3
@@ -221,7 +234,7 @@ service cloud.firestore {
           'tataBest', 'duduBest', 'bestCombo',
           'totalPoints', 'rupiahBalance', 'exchangeCount',
           'ownedItems', 'equippedByChar', 'equippedCarpet',
-          'boosterCounts', 'armedBoosters', 'updatedAt'
+          'boosterCounts', 'armedBoosters', 'friends', 'updatedAt'
         ]);
       allow delete: if false;
     }

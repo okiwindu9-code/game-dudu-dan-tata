@@ -15,6 +15,7 @@ import {
 } from './firebase/config';
 import {
   loadOrCreateCloudProfile,
+  lookupPlayerByCode,
   syncCloudProfile,
 } from './firebase/profileService';
 import {
@@ -36,6 +37,7 @@ import {
   EquippedLoadout,
   ExchangeTier,
   FloatingPopup,
+  FriendEntry,
   GamePhase,
   GlassesId,
   HatId,
@@ -83,7 +85,13 @@ function createDefaultSaveStore(): PlayerSaveStore {
       speedBoost: false,
       time2xBoost: false,
     },
+    friends: [],
   };
+}
+
+function upsertFriendList(friends: FriendEntry[], entry: FriendEntry): FriendEntry[] {
+  const filtered = friends.filter((f) => f.playerCode !== entry.playerCode);
+  return [entry, ...filtered].slice(0, 30);
 }
 
 function loadSaveStore(): PlayerSaveStore {
@@ -124,6 +132,7 @@ function loadSaveStore(): PlayerSaveStore {
           speedBoost: Boolean(p.armedBoosters?.speedBoost),
           time2xBoost: Boolean(p.armedBoosters?.time2xBoost),
         },
+        friends: Array.isArray(p.friends) ? p.friends : [],
       };
     }
   } catch {
@@ -223,7 +232,9 @@ export default function App() {
   activeDuelTurnRef.current = activeDuelTurn;
 
   const liveStreamBusyRef = useRef(false);
+  const pendingLiveFrameRef = useRef<LiveMatchState | null>(null);
   const launchedMatchPhaseRef = useRef<string | null>(null);
+  const spectatorTurnKeyRef = useRef<string | null>(null);
 
   const saveAndSync = useCallback((next: PlayerSaveStore) => {
     saveStoreRef.current = next;
@@ -294,14 +305,21 @@ export default function App() {
 
   const startMyDuelTurn = useCallback((match: TurnMatch, role: 'player1' | 'player2') => {
     const turnChar = role === 'player1' ? match.player1Char : match.player2Char;
-    launchedMatchPhaseRef.current = `${match.matchId}:${match.status}:${role}`;
-    setSelectedCharacter(turnChar);
-    engineRef.current?.setSelectedCharacter(turnChar);
-    setActiveDuelTurn({
+    const duelObj = {
       matchId: match.matchId,
       role,
       durationSec: match.durationSec,
-    });
+    };
+    launchedMatchPhaseRef.current = `${match.matchId}:${match.status}:${role}`;
+    spectatorTurnKeyRef.current = null;
+    pendingLiveFrameRef.current = null;
+    activeDuelTurnRef.current = duelObj;
+    phaseRef.current = 'playing';
+    selectedCharRef.current = turnChar;
+
+    setSelectedCharacter(turnChar);
+    engineRef.current?.setSelectedCharacter(turnChar);
+    setActiveDuelTurn(duelObj);
     setRoundBoosters({ speedBoost: false, time2xBoost: false });
     setBombReturnNotice(null);
     setOverModal('none');
@@ -323,7 +341,12 @@ export default function App() {
   }, []);
 
   const enterSpectatorArena = useCallback(
-    (charId: CharacterId, durationSec: number) => {
+    (charId: CharacterId, durationSec: number, turnKey: string) => {
+      if (spectatorTurnKeyRef.current === turnKey && phaseRef.current === 'spectating') {
+        return;
+      }
+      spectatorTurnKeyRef.current = turnKey;
+      phaseRef.current = 'spectating';
       setOverModal('none');
       setShowInviteModal(false);
       setPopups([]);
@@ -344,6 +367,7 @@ export default function App() {
     if (!user || !activeMatchId) {
       setActiveMatch(null);
       launchedMatchPhaseRef.current = null;
+      spectatorTurnKeyRef.current = null;
       return;
     }
 
@@ -353,8 +377,10 @@ export default function App() {
         if (!match) {
           setActiveMatch(null);
           setActiveMatchId(null);
+          localRoleRef.current = null;
           setLocalRole(null);
           launchedMatchPhaseRef.current = null;
+          spectatorTurnKeyRef.current = null;
           return;
         }
         setActiveMatch(match);
@@ -364,13 +390,17 @@ export default function App() {
           (user.uid === match.player2Uid ? 'player2' : 'player1');
 
         if (match.status === 'declined') {
+          activeDuelTurnRef.current = null;
           setActiveDuelTurn(null);
           setActiveMatchId(null);
           setActiveMatch(null);
+          localRoleRef.current = null;
           setLocalRole(null);
           launchedMatchPhaseRef.current = null;
+          spectatorTurnKeyRef.current = null;
           if (phaseRef.current === 'spectating' || phaseRef.current === 'playing') {
             engineRef.current?.returnToMenu();
+            phaseRef.current = 'menu';
             setPhase('menu');
           }
           setMatchError('Undangan mabar dibatalkan atau ditolak.');
@@ -384,10 +414,8 @@ export default function App() {
               startMyDuelTurn(match, 'player1');
             }
           } else {
-            if (phaseRef.current !== 'spectating') {
-              launchedMatchPhaseRef.current = key;
-              enterSpectatorArena(match.player1Char, match.durationSec);
-            }
+            const turnKey = `${match.matchId}:player1_turn`;
+            enterSpectatorArena(match.player1Char, match.durationSec, turnKey);
             if (match.liveState) {
               engineRef.current?.applyRemoteLiveState(match.liveState);
               setHud((prev) => ({
@@ -399,6 +427,9 @@ export default function App() {
                 maxCombo: match.liveState!.maxCombo,
                 itemsCaught: match.liveState!.itemsCaught,
                 feverActive: match.liveState!.feverActive,
+                feverProgress: match.liveState!.feverActive
+                  ? 1
+                  : Math.min(1, (match.liveState!.combo % 10) / 10),
                 multiplier:
                   (1 + Math.min(4, Math.floor(match.liveState!.combo / 4))) *
                   (match.liveState!.feverActive ? 2 : 1),
@@ -409,11 +440,10 @@ export default function App() {
         }
 
         if (match.status === 'player2_turn') {
+          const turnKey = `${match.matchId}:player2_turn`;
           if (role === 'player1') {
             // Player 1 watches Player 2 live in the 3D arena while waiting for match result!
-            if (phaseRef.current !== 'spectating' && phaseRef.current !== 'playing') {
-              enterSpectatorArena(match.player2Char, match.durationSec);
-            }
+            enterSpectatorArena(match.player2Char, match.durationSec, turnKey);
             if (match.liveState) {
               engineRef.current?.applyRemoteLiveState(match.liveState);
               setHud((prev) => ({
@@ -425,25 +455,31 @@ export default function App() {
                 maxCombo: match.liveState!.maxCombo,
                 itemsCaught: match.liveState!.itemsCaught,
                 feverActive: match.liveState!.feverActive,
+                feverProgress: match.liveState!.feverActive
+                  ? 1
+                  : Math.min(1, (match.liveState!.combo % 10) / 10),
                 multiplier:
                   (1 + Math.min(4, Math.floor(match.liveState!.combo / 4))) *
                   (match.liveState!.feverActive ? 2 : 1),
               }));
             }
           } else {
-            // Player 2 stays on 3D arena and sees "Giliranmu Sekarang! Mulai Main" CTA
-            if (phaseRef.current !== 'playing' && phaseRef.current !== 'spectating') {
-              enterSpectatorArena(match.player2Char, match.durationSec);
+            // Player 2 stays in 3D arena until clicking "Mulai Giliranmu!"
+            if (phaseRef.current !== 'playing') {
+              enterSpectatorArena(match.player2Char, match.durationSec, turnKey);
             }
           }
           return;
         }
 
         if (match.status === 'finished') {
+          activeDuelTurnRef.current = null;
           setActiveDuelTurn(null);
           launchedMatchPhaseRef.current = null;
+          spectatorTurnKeyRef.current = null;
           if (phaseRef.current === 'spectating' || phaseRef.current === 'playing') {
             engineRef.current?.returnToMenu();
+            phaseRef.current = 'menu';
             setPhase('menu');
           }
           setShowInviteModal(true);
@@ -471,23 +507,49 @@ export default function App() {
     }, 180);
   }, []);
 
-  const handleLiveFrame = useCallback((frame: Omit<LiveMatchState, 'turnUid'>) => {
-    const duel = activeDuelTurnRef.current;
-    const curUser = userRef.current;
-    if (!duel || !curUser || liveStreamBusyRef.current) return;
-
+  const flushLiveFrame = useCallback((matchId: string, payload: LiveMatchState) => {
     liveStreamBusyRef.current = true;
-    pushLiveMatchState(duel.matchId, {
-      ...frame,
-      turnUid: curUser.uid,
-    })
+    pushLiveMatchState(matchId, payload)
       .catch((err) => {
         console.error('Live stream frame skipped:', err);
       })
       .finally(() => {
         liveStreamBusyRef.current = false;
+        const queued = pendingLiveFrameRef.current;
+        const duelNow = activeDuelTurnRef.current;
+        if (queued && duelNow && duelNow.matchId === matchId) {
+          pendingLiveFrameRef.current = null;
+          flushLiveFrame(matchId, queued);
+        } else {
+          pendingLiveFrameRef.current = null;
+        }
       });
   }, []);
+
+  const handleLiveFrame = useCallback(
+    (frame: Omit<LiveMatchState, 'turnUid'>) => {
+      const duel = activeDuelTurnRef.current;
+      const curUser = userRef.current;
+      if (!duel || !curUser) return;
+
+      const fullFrame: LiveMatchState = {
+        ...frame,
+        turnUid: curUser.uid,
+      };
+
+      if (liveStreamBusyRef.current) {
+        const prevQueued = pendingLiveFrameRef.current;
+        pendingLiveFrameRef.current = {
+          ...fullFrame,
+          eventLabel: fullFrame.eventLabel || prevQueued?.eventLabel || '',
+        };
+        return;
+      }
+
+      flushLiveFrame(duel.matchId, fullFrame);
+    },
+    [flushLiveFrame],
+  );
 
   const finalizeDuelTurn = useCallback(
     async (
@@ -516,6 +578,8 @@ export default function App() {
         durationUsed: Math.max(1, duel.durationSec - finalHud.timeLeft),
       };
 
+      pendingLiveFrameRef.current = null;
+      activeDuelTurnRef.current = null;
       setActiveDuelTurn(null);
       setPopups([]);
       setOverModal('none');
@@ -523,9 +587,14 @@ export default function App() {
       if (duel.role === 'player1') {
         const curMatch = activeMatchRef.current;
         if (curMatch) {
-          enterSpectatorArena(curMatch.player2Char, curMatch.durationSec);
+          enterSpectatorArena(
+            curMatch.player2Char,
+            curMatch.durationSec,
+            `${curMatch.matchId}:player2_turn`,
+          );
         } else {
           engineRef.current?.returnToMenu();
+          phaseRef.current = 'menu';
           setPhase('menu');
         }
         try {
@@ -537,6 +606,7 @@ export default function App() {
         }
       } else {
         engineRef.current?.returnToMenu();
+        phaseRef.current = 'menu';
         setPhase('menu');
         setShowInviteModal(true);
         try {
@@ -737,6 +807,51 @@ export default function App() {
     await signOutFirebase();
   };
 
+  const handleAddFriend = async (targetCodeRaw: string) => {
+    const targetCode = targetCodeRaw.trim();
+    if (!/^[0-9]{6}$/.test(targetCode)) {
+      const err = new Error('ID Teman harus berupa 6 digit angka.');
+      setMatchError(err.message);
+      throw err;
+    }
+    setMatchError(null);
+    setMatchBusy(true);
+    try {
+      const target = await lookupPlayerByCode(targetCode);
+      if (!target) {
+        const err = new Error(
+          `ID Pemain ${targetCode} tidak ditemukan. Pastikan teman sudah login Google.`,
+        );
+        setMatchError(err.message);
+        throw err;
+      }
+      const cur = saveStoreRef.current;
+      const entry: FriendEntry = {
+        playerCode: target.playerCode,
+        uid: target.uid,
+        displayName: target.displayName,
+        photoURL: target.photoURL,
+        preferredChar: target.preferredChar,
+        addedAt: Date.now(),
+      };
+      saveAndSync({
+        ...cur,
+        friends: upsertFriendList(cur.friends, entry),
+      });
+    } finally {
+      setMatchBusy(false);
+    }
+  };
+
+  const handleRemoveFriend = (codeToRemove: string) => {
+    soundEngine.playClick();
+    const cur = saveStoreRef.current;
+    saveAndSync({
+      ...cur,
+      friends: cur.friends.filter((f) => f.playerCode !== codeToRemove),
+    });
+  };
+
   const handleSendInvite = async (
     targetCode: string,
     myChar: CharacterId,
@@ -747,7 +862,29 @@ export default function App() {
     setMatchError(null);
     setMatchBusy(true);
     try {
-      const { match } = await sendMabarInvite(user, playerCode, myChar, targetCode, duration);
+      const { match, targetPlayer } = await sendMabarInvite(
+        user,
+        playerCode,
+        myChar,
+        targetCode,
+        duration,
+      );
+      const cur = saveStoreRef.current;
+      const friendEntry: FriendEntry = {
+        playerCode: targetPlayer.playerCode,
+        uid: targetPlayer.uid,
+        displayName: targetPlayer.displayName,
+        photoURL: targetPlayer.photoURL,
+        preferredChar: targetPlayer.preferredChar,
+        addedAt: Date.now(),
+      };
+      saveAndSync({
+        ...cur,
+        friends: upsertFriendList(cur.friends, friendEntry),
+      });
+
+      localRoleRef.current = 'player1';
+      spectatorTurnKeyRef.current = null;
       setLocalRole('player1');
       setActiveMatch(match);
       setActiveMatchId(match.matchId);
@@ -764,11 +901,32 @@ export default function App() {
     setMatchError(null);
     setMatchBusy(true);
     try {
+      localRoleRef.current = 'player2';
       setLocalRole('player2');
-      setActiveMatch({ ...match, player2Char: myChar, status: 'player1_turn' });
-      setActiveMatchId(match.matchId);
       await acceptMabarInvite(match.matchId, user, myChar);
-      enterSpectatorArena(match.player1Char, match.durationSec);
+
+      if (match.player1Code && match.player1Uid && match.player1Uid !== user.uid) {
+        const cur = saveStoreRef.current;
+        saveAndSync({
+          ...cur,
+          friends: upsertFriendList(cur.friends, {
+            playerCode: match.player1Code,
+            uid: match.player1Uid,
+            displayName: match.player1Name,
+            photoURL: match.player1Photo,
+            preferredChar: match.player1Char,
+            addedAt: Date.now(),
+          }),
+        });
+      }
+
+      setActiveMatch({ ...match, player2Char: myChar, status: 'player1_turn' });
+      enterSpectatorArena(
+        match.player1Char,
+        match.durationSec,
+        `${match.matchId}:player1_turn`,
+      );
+      setActiveMatchId(match.matchId);
     } catch (err) {
       setMatchError(err instanceof Error ? err.message : 'Gagal menerima undangan.');
     } finally {
@@ -794,39 +952,50 @@ export default function App() {
     }
     setActiveMatchId(null);
     setActiveMatch(null);
+    localRoleRef.current = null;
     setLocalRole(null);
+    spectatorTurnKeyRef.current = null;
   };
 
   const handleClearMatch = () => {
     soundEngine.playClick();
     setActiveMatchId(null);
     setActiveMatch(null);
+    localRoleRef.current = null;
     setLocalRole(null);
     setMatchError(null);
     launchedMatchPhaseRef.current = null;
+    spectatorTurnKeyRef.current = null;
   };
 
   const handleTogglePause = () => {
     soundEngine.playClick();
     if (phase === 'playing') {
       engineRef.current?.setPaused(true);
+      phaseRef.current = 'paused';
       setPhase('paused');
     } else if (phase === 'paused') {
       engineRef.current?.setPaused(false);
+      phaseRef.current = 'playing';
       setPhase('playing');
     }
   };
 
   const handleBackToMenu = () => {
     soundEngine.playClick();
+    pendingLiveFrameRef.current = null;
+    activeDuelTurnRef.current = null;
     setActiveDuelTurn(null);
     setActiveMatchId(null);
     setActiveMatch(null);
+    localRoleRef.current = null;
     setLocalRole(null);
     launchedMatchPhaseRef.current = null;
+    spectatorTurnKeyRef.current = null;
     setOverModal('none');
     setPopups([]);
     engineRef.current?.returnToMenu();
+    phaseRef.current = 'menu';
     setPhase('menu');
   };
 
@@ -995,11 +1164,16 @@ export default function App() {
     ? `Mabar Live · ${activeDuelTurn.role === 'player1' ? 'Giliran P1' : 'Giliran P2'}`
     : null;
 
+  const visibleIncomingInvites = incomingInvites.filter(
+    (inv) => inv.matchId !== activeMatchId,
+  );
+
   const spectatingCharId: CharacterId =
     phase === 'spectating' && activeMatch
-      ? activeMatch.status === 'player1_turn'
-        ? activeMatch.player1Char
-        : activeMatch.player2Char
+      ? activeMatch.liveState?.charId ||
+        (activeMatch.status === 'player1_turn'
+          ? activeMatch.player1Char
+          : activeMatch.player2Char)
       : selectedCharacter;
 
   const spectatingName =
@@ -1014,6 +1188,13 @@ export default function App() {
     Boolean(activeMatch) &&
     activeMatch?.status === 'player2_turn' &&
     localRole === 'player2';
+
+  const waitingOpponentStart =
+    phase === 'spectating' &&
+    Boolean(activeMatch) &&
+    activeMatch?.status === 'player2_turn' &&
+    localRole === 'player1' &&
+    !activeMatch.liveState;
 
   const targetScoreToBeat =
     activeMatch?.status === 'player2_turn' ? (activeMatch.player1Result?.score ?? null) : null;
@@ -1039,7 +1220,7 @@ export default function App() {
           cloudSynced={cloudSynced}
           showInviteModal={showInviteModal}
           activeMatch={activeMatch}
-          incomingInvites={incomingInvites}
+          incomingInvites={visibleIncomingInvites}
           matchError={matchError}
           authError={authError}
           matchBusy={matchBusy}
@@ -1058,6 +1239,8 @@ export default function App() {
             soundEngine.playClick();
             setShowInviteModal(false);
           }}
+          onAddFriend={handleAddFriend}
+          onRemoveFriend={handleRemoveFriend}
           onSendInvite={handleSendInvite}
           onAcceptInvite={handleAcceptInvite}
           onDeclineInvite={handleDeclineInvite}
@@ -1083,6 +1266,7 @@ export default function App() {
           hazardFlash={hazardFlash}
           duelBadge={duelBadge}
           spectatingName={spectatingName}
+          waitingOpponentStart={waitingOpponentStart}
           targetScoreToBeat={targetScoreToBeat}
           readyForMyTurn={readyForMyTurn}
           onStartMyTurn={() => {

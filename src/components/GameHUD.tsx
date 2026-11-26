@@ -34,6 +34,7 @@ interface GameHUDProps {
   hazardFlash: boolean;
   duelBadge?: string | null;
   spectatingName?: string | null;
+  waitingOpponentStart?: boolean;
   targetScoreToBeat?: number | null;
   readyForMyTurn?: boolean;
   onStartMyTurn?: () => void;
@@ -57,6 +58,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   hazardFlash,
   duelBadge,
   spectatingName,
+  waitingOpponentStart,
   targetScoreToBeat,
   readyForMyTurn,
   onStartMyTurn,
@@ -80,11 +82,27 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between">
+      {/* Fever Mode warm golden glow */}
+      {hud.feverActive && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 border-[6px] border-[#FFD166]/65 shadow-[inset_0_0_65px_rgba(255,209,102,0.32)]"
+        />
+      )}
+
+      {/* Speed booster subtle cyan edge highlight */}
+      {!isSpectating && activeBoosters.speedBoost && !hud.feverActive && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 shadow-[inset_0_0_48px_rgba(144,224,239,0.28)]"
+        />
+      )}
+
       {/* Subtle crimson impact border flash when hit by a bomb */}
       {hazardFlash && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed inset-0 border-[10px] border-[#E63946]/60 bg-[#E63946]/12"
+          className="pointer-events-none fixed inset-0 border-[10px] border-[#E63946]/65 bg-[#E63946]/15"
         />
       )}
 
@@ -199,7 +217,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <div className="card-25d flex items-center gap-1.5 rounded-xl bg-[#432B1D] px-3 py-1 text-white">
                 <Eye className="h-3.5 w-3.5 text-[#FFD166]" strokeWidth={2.75} />
                 <span className="font-display text-xs font-bold whitespace-nowrap">
-                  LIVE · {spectatingName || 'Lawan'} Main — Tunggu Giliranmu
+                  {readyForMyTurn
+                    ? 'Giliranmu Tiba — Tekan Mulai Main!'
+                    : waitingOpponentStart
+                      ? `Menunggu ${spectatingName || 'Lawan'} Mulai Main...`
+                      : `LIVE · ${spectatingName || 'Lawan'} Main — Tunggu Giliranmu`}
                 </span>
               </div>
             ) : (

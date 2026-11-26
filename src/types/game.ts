@@ -42,7 +42,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'hat_straw',
     name: 'Topi Jerami Pita',
     category: 'hat',
-    priceRupiah: 50000,
+    priceRupiah: 120000,
     description: 'Topi piknik hangat dengan pita stroberi',
     swatchColor: '#F3D28C',
     accentColor: '#F26B7A',
@@ -51,7 +51,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'hat_strawberry',
     name: 'Topi Kupluk Stroberi',
     category: 'hat',
-    priceRupiah: 65000,
+    priceRupiah: 145000,
     description: 'Kupluk rajut merah manis berdaun hijau',
     swatchColor: '#FF6B7D',
     accentColor: '#6BD47F',
@@ -60,7 +60,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'hat_crown',
     name: 'Mahkota Madu Emas',
     category: 'hat',
-    priceRupiah: 95000,
+    priceRupiah: 210000,
     description: 'Mahkota emas mini untuk sang juara buah',
     swatchColor: '#FFD166',
     accentColor: '#FF8FAB',
@@ -71,7 +71,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'glasses_cool',
     name: 'Kacamata Hitam Keren',
     category: 'glasses',
-    priceRupiah: 55000,
+    priceRupiah: 125000,
     description: 'Gaya santai anti silau di padang rumput',
     swatchColor: '#432B1D',
     accentColor: '#FFFBF7',
@@ -80,7 +80,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'glasses_round',
     name: 'Kacamata Bulat Emas',
     category: 'glasses',
-    priceRupiah: 60000,
+    priceRupiah: 135000,
     description: 'Bingkai emas bulat menggemaskan',
     swatchColor: '#F4B942',
     accentColor: '#BEE9F7',
@@ -91,7 +91,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'shirt_pink',
     name: 'Baju Polos Pink',
     category: 'shirt',
-    priceRupiah: 50000,
+    priceRupiah: 120000,
     description: 'Kaos katun polos warna merah muda pastel',
     swatchColor: '#FF9EB5',
   },
@@ -99,7 +99,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'shirt_mint',
     name: 'Baju Polos Mint',
     category: 'shirt',
-    priceRupiah: 55000,
+    priceRupiah: 130000,
     description: 'Kaos polos sejuk bernuansa hijau mint',
     swatchColor: '#8CE0B4',
   },
@@ -107,7 +107,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'shirt_butter',
     name: 'Baju Polos Mentega',
     category: 'shirt',
-    priceRupiah: 60000,
+    priceRupiah: 140000,
     description: 'Kaos polos lembut kuning mentega',
     swatchColor: '#FFE082',
   },
@@ -117,7 +117,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'style_mask_cat',
     name: 'Topeng Kucing Pahlawan',
     category: 'costume',
-    priceRupiah: 65000,
+    priceRupiah: 150000,
     description: 'Topeng mata bertelinga kucing ungu yang keren di wajah',
     swatchColor: '#7B2CBF',
     accentColor: '#FFD166',
@@ -126,7 +126,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'style_mask_bunny',
     name: 'Topeng Kelinci Pesta',
     category: 'costume',
-    priceRupiah: 70000,
+    priceRupiah: 160000,
     description: 'Topeng pesta pastel berhias telinga kelinci & bintang emas',
     swatchColor: '#FF6B8B',
     accentColor: '#FFF3B0',
@@ -135,7 +135,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'style_uniform_sailor',
     name: 'Seragam Pelaut Manis',
     category: 'costume',
-    priceRupiah: 80000,
+    priceRupiah: 180000,
     description: 'Seragam kerah pelaut biru dongker lengkap dengan pita merah',
     swatchColor: '#2B4C7E',
     accentColor: '#E63946',
@@ -144,7 +144,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'style_uniform_royal',
     name: 'Seragam Pangeran Buah',
     category: 'costume',
-    priceRupiah: 90000,
+    priceRupiah: 200000,
     description: 'Jaket seragam biru kerajaan dengan selempang & kancing emas',
     swatchColor: '#3A86FF',
     accentColor: '#FFD166',
@@ -155,7 +155,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'carpet_checker',
     name: 'Karpet Kotak Stroberi',
     category: 'carpet',
-    priceRupiah: 65000,
+    priceRupiah: 145000,
     description: 'Karpet kotak-kotak piknik merah muda & krem',
     swatchColor: '#F88394',
     accentColor: '#FFF8F3',
@@ -164,7 +164,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'carpet_polka',
     name: 'Karpet Polkadot Mint',
     category: 'carpet',
-    priceRupiah: 75000,
+    priceRupiah: 165000,
     description: 'Karpet hijau mint dengan motif polkadot ceria',
     swatchColor: '#A8E6CF',
     accentColor: '#FFF3B0',
@@ -173,7 +173,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'carpet_stars',
     name: 'Karpet Bintang Madu',
     category: 'carpet',
-    priceRupiah: 90000,
+    priceRupiah: 195000,
     description: 'Karpet lavender lembut bertabur bintang emas',
     swatchColor: '#E0C3FC',
     accentColor: '#FFD166',
@@ -184,7 +184,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'boost_speed',
     name: 'Booster Kecepatan +35%',
     category: 'booster',
-    priceRupiah: 50000,
+    priceRupiah: 120000,
     description: 'Tambah kecepatan lari +35% selama 1 ronde',
     swatchColor: '#90E0EF',
     accentColor: '#0077B6',
@@ -193,7 +193,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'boost_time2x',
     name: 'Booster Waktu 2x Lipat',
     category: 'booster',
-    priceRupiah: 75000,
+    priceRupiah: 160000,
     description: 'Gandakan waktu bermain 2x lipat selama 1 ronde',
     swatchColor: '#FFD166',
     accentColor: '#D94F70',
@@ -353,6 +353,15 @@ export interface HudSnapshot {
   hazardsHit: number;
 }
 
+export interface FriendEntry {
+  playerCode: string;
+  uid: string;
+  displayName: string;
+  photoURL: string;
+  preferredChar: CharacterId;
+  addedAt: number;
+}
+
 export interface PlayerSaveStore {
   tataBest: number;
   duduBest: number;
@@ -368,6 +377,7 @@ export interface PlayerSaveStore {
     boost_time2x: number;
   };
   armedBoosters: ActiveBoosters;
+  friends: FriendEntry[];
 }
 
 export interface PlayerDirectoryEntry {
@@ -400,6 +410,7 @@ export interface LiveMatchState {
   x: number;
   y: number;
   vx: number;
+  vy: number;
   score: number;
   timeLeft: number;
   lives: number;

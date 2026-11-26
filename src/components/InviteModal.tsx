@@ -10,6 +10,7 @@ import {
   LogIn,
   Send,
   Swords,
+  Trash2,
   Trophy,
   UserPlus,
   Users,
@@ -19,6 +20,7 @@ import type { AuthErrorDetail } from '../firebase/config';
 import {
   CHARACTERS,
   CharacterId,
+  FriendEntry,
   InGameDuration,
   MAX_PLAYER_LIVES,
   TurnMatch,
@@ -28,6 +30,7 @@ import { AuthErrorBox } from './AuthErrorBox';
 interface InviteModalProps {
   user: User | null;
   playerCode: string | null;
+  friends: FriendEntry[];
   authBusy: boolean;
   selectedCharacter: CharacterId;
   durationMode: InGameDuration;
@@ -37,6 +40,8 @@ interface InviteModalProps {
   authError: AuthErrorDetail | null;
   matchBusy: boolean;
   onGoogleLogin: () => void;
+  onAddFriend: (targetCode: string) => Promise<void>;
+  onRemoveFriend: (playerCode: string) => void;
   onSendInvite: (targetCode: string, myChar: CharacterId, duration: InGameDuration) => void;
   onAcceptInvite: (match: TurnMatch, myChar: CharacterId) => void;
   onDeclineInvite: (matchId: string) => void;
@@ -48,6 +53,7 @@ interface InviteModalProps {
 export const InviteModal: React.FC<InviteModalProps> = ({
   user,
   playerCode,
+  friends,
   authBusy,
   selectedCharacter,
   durationMode,
@@ -57,6 +63,8 @@ export const InviteModal: React.FC<InviteModalProps> = ({
   authError,
   matchBusy,
   onGoogleLogin,
+  onAddFriend,
+  onRemoveFriend,
   onSendInvite,
   onAcceptInvite,
   onDeclineInvite,
@@ -68,12 +76,26 @@ export const InviteModal: React.FC<InviteModalProps> = ({
   const [duelDuration, setDuelDuration] = useState<InGameDuration>(durationMode);
   const [friendCode, setFriendCode] = useState('');
   const [copiedId, setCopiedId] = useState(false);
+  const [friendAddedNotice, setFriendAddedNotice] = useState<string | null>(null);
 
   const handleCopyMyId = () => {
     if (!playerCode) return;
     navigator.clipboard?.writeText(playerCode).catch(() => {});
     setCopiedId(true);
     window.setTimeout(() => setCopiedId(false), 1800);
+  };
+
+  const handleSaveFriendOnly = async () => {
+    if (friendCode.length !== 6) return;
+    setFriendAddedNotice(null);
+    try {
+      await onAddFriend(friendCode);
+      setFriendAddedNotice(`ID #${friendCode} berhasil disimpan ke Daftar Teman Mabar!`);
+      setFriendCode('');
+      window.setTimeout(() => setFriendAddedNotice(null), 2600);
+    } catch {
+      // error is displayed via matchError
+    }
   };
 
   const renderWinnerBanner = (match: TurnMatch) => {
@@ -108,10 +130,10 @@ export const InviteModal: React.FC<InviteModalProps> = ({
             </div>
             <div>
               <h2 className="font-display text-lg font-bold leading-tight text-[#432B1D] sm:text-xl">
-                Invite Mabar Live
+                Teman &amp; Invite Mabar
               </h2>
               <p className="text-xs font-semibold text-[#7A5B47]">
-                Undang teman pakai ID Profil &amp; tonton live di arena 3D!
+                Simpan ID teman lalu klik Invite untuk main live di arena 3D!
               </p>
             </div>
           </div>
@@ -137,6 +159,12 @@ export const InviteModal: React.FC<InviteModalProps> = ({
             )
           )}
 
+          {friendAddedNotice && (
+            <div className="rounded-2xl border-2 border-[#2B9348] bg-[#E8F8EE] px-3.5 py-2.5 text-xs font-bold text-[#1F5C36]">
+              {friendAddedNotice}
+            </div>
+          )}
+
           {/* 1. Not Signed In */}
           {!user && (
             <div className="rounded-3xl border-2 border-[#432B1D]/20 bg-white p-5 text-center space-y-3">
@@ -147,7 +175,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
                 Masuk Google untuk Dapat ID Mabar
               </h3>
               <p className="text-xs leading-relaxed text-[#7A5B47]">
-                Setiap akun Google otomatis mendapat ID Unik 6 digit di profil. Tinggal masukkan ID teman untuk langsung invite mabar tanpa bikin room!
+                Setiap akun Google otomatis mendapat ID Unik 6 digit di profil. Simpan ID temanmu di daftar teman mabar dan langsung undang kapan saja!
               </p>
               <button
                 type="button"
@@ -256,7 +284,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({
             );
           })()}
 
-          {/* 3. Signed In — Invite & Incoming Invites */}
+          {/* 3. Signed In — Friends List, Add Friend & Incoming Invites */}
           {user && (!activeMatch || activeMatch.status !== 'finished') && (
             <>
               {/* My Unique Player ID Card */}
@@ -349,35 +377,34 @@ export const InviteModal: React.FC<InviteModalProps> = ({
                 </div>
               )}
 
-              {/* Send Invite Form (shown when not waiting on an outgoing invite) */}
+              {/* Match Setup + Saved Friends List + Add Friend by ID */}
               {(!activeMatch || activeMatch.status === 'declined') && (
-                <div className="space-y-3 rounded-2xl border-2 border-[#432B1D]/15 bg-white p-3.5">
-                  <div>
-                    <label
-                      htmlFor="friend-id-input"
-                      className="block font-display text-xs font-bold text-[#432B1D] mb-1.5"
-                    >
-                      Masukkan ID Profil Teman (6 Digit)
-                    </label>
-                    <input
-                      id="friend-id-input"
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={friendCode}
-                      onChange={(e) =>
-                        setFriendCode(e.target.value.replace(/[^0-9]/g, ''))
-                      }
-                      placeholder="Contoh: 482915"
-                      className="font-mono-num w-full rounded-2xl border-[2.5px] border-[#432B1D] bg-[#FFFBF7] px-4 py-2.5 text-center text-xl font-bold tracking-[0.25em] text-[#432B1D] focus:outline-none"
-                    />
-                  </div>
+                <>
+                  {/* Character & Duration Selector */}
+                  <div className="space-y-2.5 rounded-2xl border-2 border-[#432B1D]/15 bg-white p-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-display text-xs font-bold text-[#432B1D]">
+                        Karakter &amp; Waktu Duel
+                      </span>
+                      <div className="flex items-center gap-1 rounded-xl border border-[#432B1D]/20 bg-[#F7EDE5] p-0.5">
+                        {([45, 60, 90] as InGameDuration[]).map((dur) => (
+                          <button
+                            key={dur}
+                            type="button"
+                            onClick={() => setDuelDuration(dur)}
+                            className={`rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
+                              duelDuration === dur
+                                ? 'bg-[#432B1D] text-[#FFFBF7]'
+                                : 'text-[#6A4C3A]'
+                            }`}
+                          >
+                            <Clock className="mr-0.5 inline h-3 w-3" strokeWidth={2.5} />
+                            {dur}d
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                  {/* Character Picker */}
-                  <div>
-                    <span className="block font-display text-xs font-bold text-[#432B1D] mb-1">
-                      Pilih Karaktermu
-                    </span>
                     <div className="grid grid-cols-2 gap-2">
                       {(['dudu', 'tata'] as CharacterId[]).map((cid) => {
                         const c = CHARACTERS[cid];
@@ -405,35 +432,112 @@ export const InviteModal: React.FC<InviteModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Duration */}
-                  <div className="flex items-center gap-1.5 rounded-xl border-2 border-[#432B1D]/15 bg-[#F7EDE5] p-1">
-                    {([45, 60, 90] as InGameDuration[]).map((dur) => (
-                      <button
-                        key={dur}
-                        type="button"
-                        onClick={() => setDuelDuration(dur)}
-                        className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition-colors ${
-                          duelDuration === dur
-                            ? 'bg-[#432B1D] text-[#FFFBF7]'
-                            : 'text-[#6A4C3A]'
-                        }`}
-                      >
-                        <Clock className="mr-1 inline h-3 w-3" strokeWidth={2.5} />
-                        {dur}d
-                      </button>
-                    ))}
+                  {/* Saved Friends Mabar List */}
+                  <div className="space-y-2 rounded-2xl border-2 border-[#432B1D]/15 bg-white p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-display text-xs font-bold text-[#432B1D]">
+                        <Users className="h-4 w-4 text-[#D94F70]" strokeWidth={2.5} />
+                        Daftar Teman Mabar ({friends.length})
+                      </span>
+                      <span className="text-[10px] font-semibold text-[#8A5A3B]">
+                        Klik Invite langsung main!
+                      </span>
+                    </div>
+
+                    {friends.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#432B1D]/25 bg-[#FFFBF7] px-3 py-3 text-center text-[11px] font-semibold text-[#7A5B47]">
+                        Belum ada teman tersimpan. Tambahkan ID Unik teman di bawah agar muncul di sini!
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-44 overflow-y-auto pr-0.5">
+                        {friends.map((f) => (
+                          <div
+                            key={f.playerCode}
+                            className="flex items-center justify-between gap-2.5 rounded-xl border-2 border-[#432B1D]/20 bg-[#FFFBF7] px-3 py-2"
+                          >
+                            <img
+                              src={f.photoURL || '/assets/aistudio/images__1__876c8792.jpeg'}
+                              alt={f.displayName}
+                              className="h-9 w-9 shrink-0 rounded-xl border border-[#432B1D] object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-display text-xs font-bold text-[#432B1D]">
+                                {f.displayName}
+                              </div>
+                              <div className="font-mono-num text-[10px] font-bold text-[#7A5B47]">
+                                #{f.playerCode} · {CHARACTERS[f.preferredChar].name}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={matchBusy || !playerCode}
+                                onClick={() =>
+                                  onSendInvite(f.playerCode, duelChar, duelDuration)
+                                }
+                                className="btn-25d flex items-center gap-1 rounded-xl bg-[#49C829] px-3 py-1.5 font-display text-xs font-bold text-white disabled:opacity-50"
+                              >
+                                <Send className="h-3.5 w-3.5" strokeWidth={2.5} />
+                                <span>Invite</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onRemoveFriend(f.playerCode)}
+                                className="flex h-8 w-8 items-center justify-center rounded-xl border border-[#432B1D]/20 bg-white text-[#9B1C2E] hover:bg-[#FFE8EB]"
+                                aria-label={`Hapus ${f.displayName}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={matchBusy || friendCode.length !== 6 || !playerCode}
-                    onClick={() => onSendInvite(friendCode, duelChar, duelDuration)}
-                    className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#49C829] py-3 font-display text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#E6DDD5] disabled:text-[#8F7A6B]"
-                  >
-                    <Send className="h-4.5 w-4.5" strokeWidth={2.5} />
-                    {matchBusy ? 'Mengirim Undangan...' : 'Invite Mabar Sekarang!'}
-                  </button>
-                </div>
+                  {/* Add New Friend by 6-Digit ID */}
+                  <div className="space-y-2.5 rounded-2xl border-2 border-[#432B1D]/15 bg-white p-3.5">
+                    <label
+                      htmlFor="friend-id-input"
+                      className="block font-display text-xs font-bold text-[#432B1D]"
+                    >
+                      Tambah ID Unik Teman (6 Digit)
+                    </label>
+                    <input
+                      id="friend-id-input"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={friendCode}
+                      onChange={(e) =>
+                        setFriendCode(e.target.value.replace(/[^0-9]/g, ''))
+                      }
+                      placeholder="Contoh: 482915"
+                      className="font-mono-num w-full rounded-2xl border-[2.5px] border-[#432B1D] bg-[#FFFBF7] px-4 py-2 text-center text-xl font-bold tracking-[0.25em] text-[#432B1D] focus:outline-none"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={matchBusy || friendCode.length !== 6 || !playerCode}
+                        onClick={handleSaveFriendOnly}
+                        className="btn-25d flex items-center justify-center gap-1.5 rounded-2xl bg-[#FFD166] py-2.5 font-display text-xs font-bold text-[#432B1D] disabled:cursor-not-allowed disabled:bg-[#E6DDD5] disabled:text-[#8F7A6B]"
+                      >
+                        <UserPlus className="h-4 w-4" strokeWidth={2.5} />
+                        <span>Simpan Teman</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={matchBusy || friendCode.length !== 6 || !playerCode}
+                        onClick={() => onSendInvite(friendCode, duelChar, duelDuration)}
+                        className="btn-25d flex items-center justify-center gap-1.5 rounded-2xl bg-[#49C829] py-2.5 font-display text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-[#E6DDD5] disabled:text-[#8F7A6B]"
+                      >
+                        <Send className="h-4 w-4" strokeWidth={2.5} />
+                        <span>{matchBusy ? 'Mengirim...' : 'Invite Langsung'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
             </>
           )}

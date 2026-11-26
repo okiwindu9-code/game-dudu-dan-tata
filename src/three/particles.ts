@@ -12,16 +12,29 @@ interface ParticleItem {
   gravity: number;
 }
 
+interface RingEffect {
+  mesh: THREE.Mesh;
+  age: number;
+  life: number;
+  startScale: number;
+  endScale: number;
+}
+
 export class ParticleSystem {
   private group = new THREE.Group();
   private active: ParticleItem[] = [];
   private pool: THREE.Mesh[] = [];
+  private rings: RingEffect[] = [];
+  private ringPool: THREE.Mesh[] = [];
+
   private starGeo: THREE.OctahedronGeometry;
   private puffGeo: THREE.SphereGeometry;
+  private ringGeo: THREE.TorusGeometry;
 
   constructor(scene: THREE.Scene) {
     this.starGeo = new THREE.OctahedronGeometry(0.16, 0);
     this.puffGeo = new THREE.SphereGeometry(0.14, 10, 8);
+    this.ringGeo = new THREE.TorusGeometry(0.42, 0.06, 8, 22);
     scene.add(this.group);
   }
 
@@ -45,12 +58,47 @@ export class ParticleSystem {
     return mesh;
   }
 
+  public spawnRing(
+    x: number,
+    y: number,
+    z: number,
+    color: number,
+    endScale = 2.6,
+  ) {
+    let mesh = this.ringPool.pop();
+    if (!mesh) {
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.9,
+      });
+      mesh = new THREE.Mesh(this.ringGeo, mat);
+    } else {
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.color.setHex(color);
+      mat.opacity = 0.9;
+    }
+    mesh.visible = true;
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(0, 0, 0);
+    mesh.scale.setScalar(0.5);
+    this.group.add(mesh);
+
+    this.rings.push({
+      mesh,
+      age: 0,
+      life: 0.36,
+      startScale: 0.5,
+      endScale,
+    });
+  }
+
   public burst(
     x: number,
     y: number,
     z: number,
     color: number,
-    count = 12,
+    count = 14,
     isHazard = false,
   ) {
     const palette = isHazard
@@ -59,23 +107,23 @@ export class ParticleSystem {
 
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
-      const speed = 2.4 + Math.random() * 3.8;
+      const speed = 2.6 + Math.random() * 4.2;
       const c = palette[i % palette.length];
       const mesh = this.acquireMesh(i % 3 === 0, c);
       mesh.position.set(x, y, z);
-      const scale = 0.65 + Math.random() * 0.75;
+      const scale = 0.7 + Math.random() * 0.8;
       mesh.scale.setScalar(scale);
 
       this.active.push({
         mesh,
         vx: Math.cos(angle) * speed,
-        vy: 2.2 + Math.random() * 4.2,
+        vy: 2.4 + Math.random() * 4.4,
         vz: Math.sin(angle) * speed * 0.65,
-        rotSpeed: (Math.random() - 0.5) * 12,
+        rotSpeed: (Math.random() - 0.5) * 14,
         age: 0,
-        life: 0.42 + Math.random() * 0.28,
+        life: 0.44 + Math.random() * 0.28,
         baseScale: scale,
-        gravity: 11.5,
+        gravity: 11.2,
       });
     }
   }
@@ -83,17 +131,17 @@ export class ParticleSystem {
   public spawnStepDust(x: number, y: number, z: number, color = 0xfff5eb) {
     const mesh = this.acquireMesh(true, color);
     mesh.position.set(x + (Math.random() - 0.5) * 0.3, y + 0.08, z);
-    const scale = 0.55 + Math.random() * 0.4;
+    const scale = 0.55 + Math.random() * 0.42;
     mesh.scale.setScalar(scale);
 
     this.active.push({
       mesh,
       vx: (Math.random() - 0.5) * 1.1,
-      vy: 0.6 + Math.random() * 0.6,
+      vy: 0.65 + Math.random() * 0.65,
       vz: (Math.random() - 0.5) * 0.5,
       rotSpeed: 2,
       age: 0,
-      life: 0.34,
+      life: 0.36,
       baseScale: scale,
       gravity: -0.4,
     });
@@ -123,6 +171,23 @@ export class ParticleSystem {
       p.mesh.scale.setScalar(Math.max(0.05, s));
       (p.mesh.material as THREE.MeshBasicMaterial).opacity = 1 - t * t;
     }
+
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.age += dt;
+      if (r.age >= r.life) {
+        r.mesh.visible = false;
+        this.group.remove(r.mesh);
+        this.ringPool.push(r.mesh);
+        this.rings.splice(i, 1);
+        continue;
+      }
+      const t = r.age / r.life;
+      const easeOut = 1 - (1 - t) * (1 - t);
+      const scale = r.startScale + (r.endScale - r.startScale) * easeOut;
+      r.mesh.scale.setScalar(scale);
+      (r.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.85;
+    }
   }
 
   public clear() {
@@ -132,15 +197,27 @@ export class ParticleSystem {
       this.pool.push(p.mesh);
     }
     this.active.length = 0;
+
+    for (const r of this.rings) {
+      r.mesh.visible = false;
+      this.group.remove(r.mesh);
+      this.ringPool.push(r.mesh);
+    }
+    this.rings.length = 0;
   }
 
   public dispose() {
     this.clear();
     this.starGeo.dispose();
     this.puffGeo.dispose();
+    this.ringGeo.dispose();
     for (const m of this.pool) {
       (m.material as THREE.Material).dispose();
     }
+    for (const m of this.ringPool) {
+      (m.material as THREE.Material).dispose();
+    }
     this.pool.length = 0;
+    this.ringPool.length = 0;
   }
 }

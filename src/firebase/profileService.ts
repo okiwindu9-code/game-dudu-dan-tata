@@ -11,6 +11,7 @@ import {
   CharacterId,
   CostumeId,
   EquippedLoadout,
+  FriendEntry,
   GlassesId,
   HatId,
   PlayerDirectoryEntry,
@@ -46,6 +47,33 @@ function sanitizeLoadout(eq?: Partial<EquippedLoadout>): EquippedLoadout {
   };
 }
 
+function sanitizeFriends(raw: unknown): FriendEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: FriendEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const code = typeof rec.playerCode === 'string' ? rec.playerCode.trim() : '';
+    const uid = typeof rec.uid === 'string' ? rec.uid.trim().slice(0, 128) : '';
+    if (!/^[0-9]{6}$/.test(code) || !/^[a-zA-Z0-9_\-]+$/.test(uid)) continue;
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push({
+      playerCode: code,
+      uid,
+      displayName: sanitizeDisplayName(
+        typeof rec.displayName === 'string' ? rec.displayName : 'Teman',
+      ),
+      photoURL: sanitizePhotoUrl(typeof rec.photoURL === 'string' ? rec.photoURL : ''),
+      preferredChar: rec.preferredChar === 'tata' ? 'tata' : 'dudu',
+      addedAt: clampInt(typeof rec.addedAt === 'number' ? rec.addedAt : Date.now(), 0, 9999999999999),
+    });
+    if (out.length >= 30) break;
+  }
+  return out;
+}
+
 function sanitizeStorePayload(store: PlayerSaveStore) {
   const ownedItems = Array.isArray(store.ownedItems)
     ? Array.from(
@@ -78,6 +106,7 @@ function sanitizeStorePayload(store: PlayerSaveStore) {
       speedBoost: Boolean(store.armedBoosters?.speedBoost),
       time2xBoost: Boolean(store.armedBoosters?.time2xBoost),
     },
+    friends: sanitizeFriends(store.friends),
   };
 }
 
@@ -122,6 +151,7 @@ function parseCloudDoc(
         speedBoost: Boolean(armed.speedBoost),
         time2xBoost: Boolean(armed.time2xBoost),
       },
+      friends: 'friends' in data ? sanitizeFriends(data.friends) : sanitizeFriends(fallback.friends),
     },
   };
 }
@@ -228,12 +258,14 @@ export async function loadOrCreateCloudProfile(
     const parsed = parseCloudDoc(snap.data() as Record<string, unknown>, localFallback);
     const code = parsed.playerCode || (await allocateUniquePlayerCode(user));
 
-    // Migrate legacy docs missing playerCode or still holding old bag loadout shape
-    const rawEq = (snap.data() as Record<string, unknown>).equippedByChar as
+    // Migrate legacy docs missing playerCode, friends list, or still holding old bag loadout shape
+    const rawData = snap.data() as Record<string, unknown>;
+    const rawEq = rawData.equippedByChar as
       | Record<string, Record<string, unknown>>
       | undefined;
     const needsMigration =
       !parsed.playerCode ||
+      !('friends' in rawData) ||
       !rawEq?.dudu ||
       !('costume' in rawEq.dudu) ||
       'bag' in rawEq.dudu;
