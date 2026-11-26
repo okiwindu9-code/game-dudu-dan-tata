@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Fredoka', system-ui, sans-serif;
+    --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-body);
+    color: #432B1D;
+    background-color: #FFE8EC;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes floatUpFade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.75);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -12px) scale(1.12);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -64px) scale(0.95);
+  }
+}
+
+.animate-float-score {
+  animation: floatUpFade 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Tactile 2.5D illustrated button press */
+.btn-25d {
+  border: 2.5px solid #432B1D;
+  box-shadow: 0 4px 0 #432B1D;
+  transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.14s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.14s ease;
+}
+
+.btn-25d:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 #432B1D;
+}
+
+.btn-25d:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #432B1D;
+}
+
+.card-25d {
+  border: 2.5px solid #432B1D;
+  box-shadow: 0 6px 0 rgba(67, 43, 29, 0.92);
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Tata & Dudu",
+  "description": "Game 2.5D Three.js mengumpulkan buah dan makanan lezat yang jatuh dari langit bersama karakter lucu Tata dan Dudu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
