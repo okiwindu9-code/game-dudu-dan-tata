@@ -80,74 +80,98 @@ function createFaceFeatures(
   rightEye: THREE.Mesh;
   tongueGroup: THREE.Group;
 } {
+  // Head ellipsoid semi-axes: (rx=0.8968, ry=0.7144, rz=0.6232)
+  const rx = 0.76 * 1.18;
+  const ry = 0.76 * 0.94;
+  const rz = 0.76 * 0.82;
+
   // Eyes: crisp wide-set dark espresso ovals sitting cleanly on the front face
   const eyeGeo = new THREE.SphereGeometry(0.072, 16, 12);
   eyeGeo.scale(1.0, 1.08, 0.45);
   const leftEye = new THREE.Mesh(eyeGeo, darkMat);
-  leftEye.position.set(-0.29, -0.03, 0.565);
+  leftEye.position.set(-0.29, -0.025, 0.582);
   headGroup.add(leftEye);
 
   const rightEye = new THREE.Mesh(eyeGeo.clone(), darkMat);
-  rightEye.position.set(0.29, -0.03, 0.565);
+  rightEye.position.set(0.29, -0.025, 0.582);
   headGroup.add(rightEye);
 
   // Subtle cute eye shine micro-dots
   const shineGeo = new THREE.SphereGeometry(0.018, 8, 8);
   const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const leftShine = new THREE.Mesh(shineGeo, shineMat);
-  leftShine.position.set(-0.27, -0.005, 0.598);
+  leftShine.position.set(-0.27, 0.0, 0.613);
   headGroup.add(leftShine);
 
   const rightShine = new THREE.Mesh(shineGeo, shineMat);
-  rightShine.position.set(0.31, -0.005, 0.598);
+  rightShine.position.set(0.31, 0.0, 0.613);
   headGroup.add(rightShine);
 
-  // Big soft circular blush cheeks matching the attached illustration
-  const blushGeo = new THREE.CircleGeometry(0.175, 24);
+  // Full round circular blush cheeks positioned strictly outside the ellipsoid along the cheek normal
+  const blushGeo = new THREE.CircleGeometry(0.145, 28);
   const blushMat = new THREE.MeshBasicMaterial({
     color: blushColor,
     transparent: true,
     opacity: 0.92,
   });
 
-  const leftBlush = new THREE.Mesh(blushGeo, blushMat);
-  leftBlush.position.set(-0.52, -0.21, 0.46);
-  leftBlush.rotation.y = -0.52;
-  leftBlush.rotation.x = 0.14;
-  headGroup.add(leftBlush);
+  const placeRoundBlush = (side: -1 | 1) => {
+    const bx = side * 0.47;
+    const by = -0.165;
+    const bz = rz * Math.sqrt(Math.max(0.05, 1 - (bx / rx) ** 2 - (by / ry) ** 2));
+    const normal = new THREE.Vector3(
+      bx / (rx * rx),
+      by / (ry * ry),
+      bz / (rz * rz),
+    ).normalize();
+    const pos = new THREE.Vector3(bx, by, bz).addScaledVector(normal, 0.014);
+    const blush = new THREE.Mesh(blushGeo, blushMat);
+    blush.position.copy(pos);
+    blush.lookAt(pos.clone().add(normal));
+    headGroup.add(blush);
+  };
 
-  const rightBlush = new THREE.Mesh(blushGeo, blushMat);
-  rightBlush.position.set(0.52, -0.21, 0.46);
-  rightBlush.rotation.y = 0.52;
-  rightBlush.rotation.x = 0.14;
-  headGroup.add(rightBlush);
+  placeRoundBlush(-1);
+  placeRoundBlush(1);
 
-  // Cute ":3" w-shaped mouth + open pink tongue with espresso border
+  // Cute downward "3" (w-shaped) mouth + open pink tongue cleanly flush on front surface
   const mouthGroup = new THREE.Group();
-  mouthGroup.position.set(0, -0.14, 0.578);
+  mouthGroup.position.set(0, -0.145, 0.614);
 
-  const arcGeo = new THREE.TorusGeometry(0.048, 0.016, 8, 16, Math.PI * 0.95);
+  const arcGeo = new THREE.TorusGeometry(0.048, 0.017, 10, 20, Math.PI);
   const leftArc = new THREE.Mesh(arcGeo, darkMat);
-  leftArc.position.set(-0.045, 0.02, 0);
-  leftArc.rotation.z = Math.PI * 1.02;
+  leftArc.position.set(-0.048, 0.016, 0);
+  leftArc.rotation.z = Math.PI;
+  leftArc.rotation.y = -0.12;
   mouthGroup.add(leftArc);
 
   const rightArc = new THREE.Mesh(arcGeo, darkMat);
-  rightArc.position.set(0.045, 0.02, 0);
-  rightArc.rotation.z = Math.PI * 1.02;
+  rightArc.position.set(0.048, 0.016, 0);
+  rightArc.rotation.z = Math.PI;
+  rightArc.rotation.y = 0.12;
   mouthGroup.add(rightArc);
 
-  // Open pink tongue with espresso rim
-  const tongueGroup = new THREE.Group();
-  tongueGroup.position.set(0, -0.048, -0.004);
+  // Rounded stroke caps so the downward-3 ("ω") silhouette is crisp and seamless
+  const capGeo = new THREE.SphereGeometry(0.017, 10, 10);
+  const centerCap = new THREE.Mesh(capGeo, darkMat);
+  centerCap.position.set(0, 0.016, 0.004);
+  const leftCap = new THREE.Mesh(capGeo, darkMat);
+  leftCap.position.set(-0.096, 0.016, -0.006);
+  const rightCap = new THREE.Mesh(capGeo, darkMat);
+  rightCap.position.set(0.096, 0.016, -0.006);
+  mouthGroup.add(centerCap, leftCap, rightCap);
 
-  const tongueRimGeo = new THREE.SphereGeometry(0.068, 16, 12);
-  tongueRimGeo.scale(0.85, 1.15, 0.35);
+  // Open pink tongue with espresso rim tucked below the downward-3 upper lip
+  const tongueGroup = new THREE.Group();
+  tongueGroup.position.set(0, -0.046, -0.006);
+
+  const tongueRimGeo = new THREE.SphereGeometry(0.066, 16, 12);
+  tongueRimGeo.scale(0.85, 1.1, 0.35);
   const tongueRim = new THREE.Mesh(tongueRimGeo, darkMat);
   tongueGroup.add(tongueRim);
 
-  const tongueInnerGeo = new THREE.SphereGeometry(0.049, 16, 12);
-  tongueInnerGeo.scale(0.82, 1.12, 0.45);
+  const tongueInnerGeo = new THREE.SphereGeometry(0.047, 16, 12);
+  tongueInnerGeo.scale(0.82, 1.08, 0.45);
   const tongueMat = new THREE.MeshBasicMaterial({ color: 0xf18f8e });
   const tongueInner = new THREE.Mesh(tongueInnerGeo, tongueMat);
   tongueInner.position.set(0, -0.002, 0.012);
@@ -307,7 +331,7 @@ export function createCharacter(id: CharacterId): CharacterRig {
   headGroup.add(hatSlot);
 
   const glassesSlot = new THREE.Group();
-  glassesSlot.position.set(0, -0.02, 0.61);
+  glassesSlot.position.set(0, -0.02, 0.635);
   headGroup.add(glassesSlot);
 
   const shirtSlot = new THREE.Group();
@@ -315,7 +339,7 @@ export function createCharacter(id: CharacterId): CharacterRig {
   bodyPivot.add(shirtSlot);
 
   const maskSlot = new THREE.Group();
-  maskSlot.position.set(0, -0.02, 0.605);
+  maskSlot.position.set(0, -0.02, 0.63);
   headGroup.add(maskSlot);
 
   const uniformSlot = new THREE.Group();

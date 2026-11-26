@@ -214,6 +214,7 @@ export default function App() {
   const [emotePopups, setEmotePopups] = useState<EmotePopupItem[]>([]);
   const [emoteCooldown, setEmoteCooldown] = useState(false);
   const [lastTappedEmote, setLastTappedEmote] = useState<EmoteId | null>(null);
+  const [turnAutoCountdown, setTurnAutoCountdown] = useState<number | null>(null);
 
   const selectedCharRef = useRef<CharacterId>(selectedCharacter);
   selectedCharRef.current = selectedCharacter;
@@ -552,7 +553,11 @@ export default function App() {
               }));
             }
           } else {
-            // Player 2 stays in 3D arena until clicking "Mulai Giliranmu!"
+            // Player 2 gets ready to start their turn (shows takeover overlay + auto-starts in 2s)
+            if (!localRoleRef.current) {
+              localRoleRef.current = 'player2';
+              setLocalRole('player2');
+            }
             if (phaseRef.current !== 'playing') {
               enterSpectatorArena(
                 match.player2Char,
@@ -859,10 +864,16 @@ export default function App() {
         }
         try {
           await finishPlayer1Turn(duel.matchId, turnResult);
-        } catch (err) {
-          setMatchError(
-            err instanceof Error ? err.message : 'Gagal mengirim skor giliran ke server.',
-          );
+        } catch {
+          // Retry once after a short delay in case of transient network error
+          await new Promise((r) => window.setTimeout(r, 600));
+          try {
+            await finishPlayer1Turn(duel.matchId, turnResult);
+          } catch (err) {
+            setMatchError(
+              err instanceof Error ? err.message : 'Gagal mengirim skor giliran ke server.',
+            );
+          }
         }
       } else {
         engineRef.current?.returnToMenu();
@@ -1475,21 +1486,65 @@ export default function App() {
         : activeMatch.player2Name
       : null;
 
+  const effectiveRole: 'player1' | 'player2' | null =
+    localRole ||
+    (user && activeMatch
+      ? user.uid === activeMatch.player2Uid
+        ? 'player2'
+        : user.uid === activeMatch.player1Uid
+          ? 'player1'
+          : null
+      : null);
+
   const readyForMyTurn =
     phase === 'spectating' &&
     Boolean(activeMatch) &&
     activeMatch?.status === 'player2_turn' &&
-    localRole === 'player2';
+    effectiveRole === 'player2';
 
   const waitingOpponentStart =
     phase === 'spectating' &&
     Boolean(activeMatch) &&
     activeMatch?.status === 'player2_turn' &&
-    localRole === 'player1' &&
+    effectiveRole === 'player1' &&
     (!activeLiveFrame || activeLiveFrame.turnUid !== activeMatch.player2Uid);
 
   const targetScoreToBeat =
     activeMatch?.status === 'player2_turn' ? (activeMatch.player1Result?.score ?? null) : null;
+
+  // Automatically transition Player 2 into active gameplay after 2s so they never get stuck on emote screen
+  useEffect(() => {
+    if (!readyForMyTurn || !activeMatch) {
+      setTurnAutoCountdown(null);
+      return;
+    }
+    setEmotePopups([]);
+    setTurnAutoCountdown(2);
+
+    const tickId = window.setInterval(() => {
+      setTurnAutoCountdown((prev) => {
+        if (prev === null) return null;
+        return prev <= 1 ? 0 : prev - 1;
+      });
+    }, 1000);
+
+    const launchId = window.setTimeout(() => {
+      const latestMatch = activeMatchRef.current;
+      if (
+        latestMatch &&
+        latestMatch.status === 'player2_turn' &&
+        phaseRef.current === 'spectating'
+      ) {
+        setTurnAutoCountdown(null);
+        startMyDuelTurn(latestMatch, 'player2');
+      }
+    }, 2000);
+
+    return () => {
+      window.clearInterval(tickId);
+      window.clearTimeout(launchId);
+    };
+  }, [readyForMyTurn, activeMatch?.matchId, startMyDuelTurn]);
 
   return (
     <main className="relative h-[100dvh] w-screen overflow-hidden bg-[#FFE8EC]">
@@ -1561,9 +1616,11 @@ export default function App() {
           waitingOpponentStart={waitingOpponentStart}
           targetScoreToBeat={targetScoreToBeat}
           readyForMyTurn={readyForMyTurn}
+          turnAutoCountdown={turnAutoCountdown}
           onStartMyTurn={() => {
             if (activeMatch) {
               soundEngine.playClick();
+              setTurnAutoCountdown(null);
               startMyDuelTurn(activeMatch, 'player2');
             }
           }}

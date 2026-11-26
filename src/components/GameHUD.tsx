@@ -85,6 +85,7 @@ interface GameHUDProps {
   waitingOpponentStart?: boolean;
   targetScoreToBeat?: number | null;
   readyForMyTurn?: boolean;
+  turnAutoCountdown?: number | null;
   onStartMyTurn?: () => void;
   emotePopups?: EmotePopupItem[];
   emoteCooldown?: boolean;
@@ -114,6 +115,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   waitingOpponentStart,
   targetScoreToBeat,
   readyForMyTurn,
+  turnAutoCountdown = null,
   onStartMyTurn,
   emotePopups = [],
   emoteCooldown = false,
@@ -276,7 +278,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 <Eye className="h-3.5 w-3.5 text-[#FFD166]" strokeWidth={2.75} />
                 <span className="font-display text-xs font-bold whitespace-nowrap">
                   {readyForMyTurn
-                    ? 'Giliranmu Tiba — Tekan Mulai Main!'
+                    ? 'Lawan Selesai — Giliranmu Tiba!'
                     : waitingOpponentStart
                       ? `Menunggu ${spectatingName || 'Lawan'} Mulai Main...`
                       : `LIVE · ${spectatingName || 'Lawan'} Main — Tunggu Giliranmu`}
@@ -425,7 +427,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       )}
 
       {/* Real-time Interactive Emote Pulse Popups (Visible to both active runner & waiting spectator) */}
-      {emotePopups.length > 0 && (
+      {emotePopups.length > 0 && !readyForMyTurn && (
         <div className="pointer-events-none fixed inset-x-0 top-24 z-20 flex flex-col items-center gap-2.5 px-4 sm:top-28">
           {emotePopups.map((item) => {
             const meta = MABAR_EMOTES.find((m) => m.id === item.emoteId) || MABAR_EMOTES[0];
@@ -465,16 +467,24 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
-      {/* Player 2 Turn Takeover Banner right on the 3D Arena */}
+      {/* Player 2 Turn Takeover Overlay (Auto-starts in 2s OR tap immediately) */}
       {isSpectating && readyForMyTurn && onStartMyTurn && (
-        <div className="pointer-events-auto fixed inset-x-0 bottom-20 z-20 flex justify-center px-4">
-          <div className="card-25d flex w-full max-w-sm flex-col items-center gap-2.5 rounded-3xl bg-[#FFFBF7] p-4 text-center">
-            <div className="font-display text-base font-bold text-[#432B1D]">
-              Giliranmu Sekarang!
+        <div className="pointer-events-auto fixed inset-0 z-20 flex items-center justify-center bg-[#432B1D]/30 px-4">
+          <div className="card-25d flex w-full max-w-sm flex-col items-center gap-3 rounded-3xl bg-[#FFFBF7] p-5 text-center">
+            <div className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#432B1D] bg-[#FFD166] px-3 py-1 font-display text-xs font-bold text-[#432B1D]">
+              <Swords className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <span>Giliranmu Sekarang!</span>
             </div>
+            <h2 className="font-display text-xl font-bold text-[#432B1D]">
+              Lawan Sudah Selesai Main
+            </h2>
             {typeof targetScoreToBeat === 'number' && (
               <p className="text-xs font-semibold text-[#7A5B47]">
-                Lawan mencetak <strong className="font-mono-num text-[#D94F70]">{targetScoreToBeat} poin</strong>. Ayo kejar &amp; menangkan!
+                Skor lawan:{' '}
+                <strong className="font-mono-num text-[#D94F70]">
+                  {targetScoreToBeat} poin
+                </strong>
+                . Ayo kejar &amp; menangkan!
               </p>
             )}
             <button
@@ -483,8 +493,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#49C829] py-3 font-display text-base font-bold text-white"
             >
               <Play className="h-5 w-5 fill-current" strokeWidth={2.5} />
-              Mulai Giliranmu!
+              Mulai Giliran Sekarang!
             </button>
+            <p className="text-[11px] font-bold text-[#8A6752]">
+              {typeof turnAutoCountdown === 'number' && turnAutoCountdown > 0
+                ? `Otomatis mulai dalam ${turnAutoCountdown} detik...`
+                : 'Memulai permainanmu...'}
+            </p>
           </div>
         </div>
       )}
@@ -535,11 +550,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 })}
               </div>
             </div>
-          ) : (
-            <div className="card-25d rounded-2xl bg-[#FFFBF7]/95 px-4 py-2 text-center font-display text-xs font-bold text-[#432B1D]">
-              Siap giliranmu melawan {spectatingName || 'lawan'}!
-            </div>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="flex items-end justify-between p-3 sm:p-5">
