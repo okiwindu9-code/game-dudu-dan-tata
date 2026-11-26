@@ -13,7 +13,12 @@ export type CollectibleType =
   | 'clock'
   | 'bomb';
 
-export type HatId = 'hat_straw' | 'hat_strawberry' | 'hat_crown' | 'hat_hijab_brown';
+export type HatId =
+  | 'hat_straw'
+  | 'hat_strawberry'
+  | 'hat_crown'
+  | 'hat_hijab_brown'
+  | 'hat_horns';
 export type GlassesId = 'glasses_cool' | 'glasses_round';
 export type ShirtId = 'shirt_pink' | 'shirt_mint' | 'shirt_butter';
 export type CostumeId =
@@ -73,6 +78,15 @@ export const SHOP_ITEMS: ShopItem[] = [
     description: 'Kerudung coklat manis lengkap lilitan leher & juntaian dada',
     swatchColor: '#8B4E2F',
     accentColor: '#A8643E',
+  },
+  {
+    id: 'hat_horns',
+    name: 'Tanduk Imut',
+    category: 'hat',
+    priceRupiah: 155000,
+    description: 'Sepasang tanduk merah lengkung imut dengan cincin emas',
+    swatchColor: '#E63946',
+    accentColor: '#FFD166',
   },
 
   // Aksesoris Kacamata
@@ -463,4 +477,89 @@ export interface TurnMatch {
   player1Result: TurnPlayerResult | null;
   player2Result: TurnPlayerResult | null;
   winnerUid: string | null;
+}
+
+export type EmoteId =
+  | 'cheer_love'
+  | 'cheer_fire'
+  | 'cheer_clap'
+  | 'taunt_bleh'
+  | 'taunt_boom'
+  | 'taunt_haha';
+
+export type EmoteTone = 'support' | 'taunt';
+
+export interface EmoteMeta {
+  id: EmoteId;
+  label: string;
+  bubbleText: string;
+  tone: EmoteTone;
+  bgColor: string;
+  ringColor: string;
+  accentHex: number;
+}
+
+export const MABAR_EMOTES: EmoteMeta[] = [
+  {
+    id: 'cheer_love',
+    label: 'Semangat',
+    bubbleText: 'Semangat ya!',
+    tone: 'support',
+    bgColor: '#FFE0EA',
+    ringColor: '#F26B7A',
+    accentHex: 0xff6b8b,
+  },
+  {
+    id: 'cheer_fire',
+    label: 'Gas Pol!',
+    bubbleText: 'Gas terus!!',
+    tone: 'support',
+    bgColor: '#FFF1D0',
+    ringColor: '#F59E0B',
+    accentHex: 0xffb703,
+  },
+  {
+    id: 'cheer_clap',
+    label: 'Jago!',
+    bubbleText: 'Keren banget!',
+    tone: 'support',
+    bgColor: '#E3F8EA',
+    ringColor: '#2B9348',
+    accentHex: 0x49c829,
+  },
+  {
+    id: 'taunt_bleh',
+    label: 'Wlee!',
+    bubbleText: 'Wlee~ kejar dong!',
+    tone: 'taunt',
+    bgColor: '#F3E8FF',
+    ringColor: '#8B5CF6',
+    accentHex: 0x9b5de5,
+  },
+  {
+    id: 'taunt_boom',
+    label: 'Awas Bom',
+    bubbleText: 'Awas kena bom!',
+    tone: 'taunt',
+    bgColor: '#FFE4E6',
+    ringColor: '#E63946',
+    accentHex: 0xe63946,
+  },
+  {
+    id: 'taunt_haha',
+    label: 'Haha!',
+    bubbleText: 'Hahaha santai aja!',
+    tone: 'taunt',
+    bgColor: '#FFEDD5',
+    ringColor: '#EA580C',
+    accentHex: 0xff7b00,
+  },
+];
+
+export interface LiveEmoteEvent {
+  senderUid: string;
+  senderName: string;
+  emoteId: EmoteId;
+  seq: number;
+  sentAtMs: number;
 }

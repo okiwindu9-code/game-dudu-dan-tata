@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Bomb,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -8,11 +9,15 @@ import {
   Flame,
   Heart,
   Home,
+  Laugh,
   Pause,
   Play,
+  Radio,
   RotateCcw,
   Smartphone,
+  Sparkles,
   Swords,
+  ThumbsUp,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -20,10 +25,53 @@ import {
   ActiveBoosters,
   CHARACTERS,
   CharacterId,
+  EmoteId,
   FloatingPopup,
   GamePhase,
   HudSnapshot,
+  MABAR_EMOTES,
 } from '../types/game';
+
+export interface EmotePopupItem {
+  key: number;
+  emoteId: EmoteId;
+  senderName: string;
+  isMine: boolean;
+}
+
+function EmoteArtwork({
+  emoteId,
+  className = 'h-5 w-5',
+}: {
+  emoteId: EmoteId;
+  className?: string;
+}) {
+  if (emoteId === 'cheer_love') {
+    return <Heart className={`${className} fill-[#F26B7A] text-[#432B1D]`} strokeWidth={2.4} />;
+  }
+  if (emoteId === 'cheer_fire') {
+    return <Flame className={`${className} fill-[#FFB703] text-[#432B1D]`} strokeWidth={2.4} />;
+  }
+  if (emoteId === 'cheer_clap') {
+    return <ThumbsUp className={`${className} fill-[#49C829] text-[#432B1D]`} strokeWidth={2.4} />;
+  }
+  if (emoteId === 'taunt_boom') {
+    return <Bomb className={`${className} fill-[#432B1D] text-[#E63946]`} strokeWidth={2.4} />;
+  }
+  if (emoteId === 'taunt_haha') {
+    return <Laugh className={`${className} fill-[#FFD166] text-[#432B1D]`} strokeWidth={2.4} />;
+  }
+  // taunt_bleh: cheeky playful sticking-out-tongue vector face
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="9.5" fill="#E9D5FF" stroke="#432B1D" strokeWidth="2.2" />
+      <path d="M7.5 9.5 L10 10.5 L7.5 11.5" fill="none" stroke="#432B1D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16.5 9.5 L14 10.5 L16.5 11.5" fill="none" stroke="#432B1D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7.5 14.5 Q12 16.5 16.5 14.5" fill="none" stroke="#432B1D" strokeWidth="2" strokeLinecap="round" />
+      <path d="M10 15.2 V18.2 A2 2 0 0 0 14 18.2 V15.2 Z" fill="#F26B7A" stroke="#432B1D" strokeWidth="1.6" />
+    </svg>
+  );
+}
 
 interface GameHUDProps {
   characterId: CharacterId;
@@ -38,6 +86,11 @@ interface GameHUDProps {
   targetScoreToBeat?: number | null;
   readyForMyTurn?: boolean;
   onStartMyTurn?: () => void;
+  emotePopups?: EmotePopupItem[];
+  emoteCooldown?: boolean;
+  lastTappedEmote?: EmoteId | null;
+  onSendEmote?: (emoteId: EmoteId) => void;
+  onDismissEmote?: (key: number) => void;
   muted: boolean;
   vibrationEnabled: boolean;
   onToggleMute: () => void;
@@ -62,6 +115,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   targetScoreToBeat,
   readyForMyTurn,
   onStartMyTurn,
+  emotePopups = [],
+  emoteCooldown = false,
+  lastTappedEmote = null,
+  onSendEmote,
+  onDismissEmote,
   muted,
   vibrationEnabled,
   onToggleMute,
@@ -138,7 +196,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="pointer-events-auto card-25d flex flex-col rounded-2xl bg-[#FFFBF7] px-3 py-1.5 sm:px-4 sm:py-2">
             <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-wide text-[#8A6752] sm:text-[11px]">
               {isSpectating && (
-                <span className="inline-block h-2 w-2 rounded-full bg-[#E63946] animate-pulse" />
+                <Radio className="h-3.5 w-3.5 shrink-0 text-[#E63946]" strokeWidth={2.75} />
               )}
               <span>
                 {isSpectating && spectatingName
@@ -366,6 +424,47 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
+      {/* Real-time Interactive Emote Pulse Popups (Visible to both active runner & waiting spectator) */}
+      {emotePopups.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-24 z-20 flex flex-col items-center gap-2.5 px-4 sm:top-28">
+          {emotePopups.map((item) => {
+            const meta = MABAR_EMOTES.find((m) => m.id === item.emoteId) || MABAR_EMOTES[0];
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onDismissEmote?.(item.key)}
+                className="pointer-events-auto animate-emote-pop relative flex items-center gap-2.5 rounded-2xl border-[2.5px] border-[#432B1D] px-3.5 py-2 shadow-[0_5px_0_#432B1D]"
+                style={{ backgroundColor: meta.bgColor }}
+                aria-label={`Emote ${meta.label} dari ${item.senderName}`}
+              >
+                <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-[#432B1D] bg-white">
+                  <span
+                    aria-hidden="true"
+                    className="animate-emote-ring pointer-events-none absolute inset-0 rounded-xl border-[3px]"
+                    style={{ borderColor: meta.ringColor }}
+                  />
+                  <span className="animate-emote-wiggle inline-flex items-center justify-center">
+                    <EmoteArtwork emoteId={item.emoteId} className="h-5 w-5" />
+                  </span>
+                </div>
+                <div className="text-left">
+                  <div className="text-[10px] font-bold leading-none text-[#7A5B47]">
+                    {item.isMine ? 'Kamu' : item.senderName} ·{' '}
+                    <span style={{ color: meta.ringColor }}>
+                      {meta.tone === 'support' ? 'Dukungan' : 'Ejekan'}
+                    </span>
+                  </div>
+                  <div className="font-display text-sm font-bold leading-tight text-[#432B1D]">
+                    {meta.bubbleText}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Player 2 Turn Takeover Banner right on the 3D Arena */}
       {isSpectating && readyForMyTurn && onStartMyTurn && (
         <div className="pointer-events-auto fixed inset-x-0 bottom-20 z-20 flex justify-center px-4">
@@ -390,12 +489,57 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
-      {/* Bottom Touch / Quick Helper Bar */}
+      {/* Bottom Touch / Quick Helper Bar + Interactive Emote Dock when waiting */}
       {isSpectating ? (
-        <div className="flex justify-center p-3 sm:p-5">
-          <div className="card-25d rounded-2xl bg-[#FFFBF7]/95 px-4 py-2 text-center font-display text-xs font-bold text-[#432B1D]">
-            Kamu sedang bersorak di tikar piknik sambil menonton {spectatingName || 'lawan'} bermain live!
-          </div>
+        <div className="pointer-events-none flex justify-center px-2.5 pb-3 sm:p-5">
+          {!readyForMyTurn && onSendEmote ? (
+            <div className="pointer-events-auto card-25d w-full max-w-lg rounded-3xl bg-[#FFFBF7]/95 p-2.5 sm:p-3">
+              <div className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[11px] font-bold text-[#6A4C3A]">
+                <span className="flex items-center gap-1.5 truncate">
+                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#F26B7A]" strokeWidth={2.6} />
+                  <span className="truncate">
+                    Kirim Emote Live ke {spectatingName || 'Lawan'}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[10px] font-semibold text-[#8A6752]">
+                  Dukung · Ejek
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+                {MABAR_EMOTES.map((emote) => {
+                  const justTapped = lastTappedEmote === emote.id;
+                  return (
+                    <button
+                      key={emote.id}
+                      type="button"
+                      disabled={emoteCooldown}
+                      onClick={() => onSendEmote(emote.id)}
+                      style={{ backgroundColor: emote.bgColor }}
+                      className={`btn-25d relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-2xl px-1.5 py-1.5 text-[#432B1D] transition-transform ${
+                        justTapped ? 'scale-95 ring-2 ring-[#432B1D]' : ''
+                      } ${emoteCooldown && !justTapped ? 'opacity-75' : ''}`}
+                    >
+                      {justTapped && (
+                        <span
+                          aria-hidden="true"
+                          className="animate-emote-ring pointer-events-none absolute inset-0 rounded-2xl border-2"
+                          style={{ borderColor: emote.ringColor }}
+                        />
+                      )}
+                      <EmoteArtwork emoteId={emote.id} className="h-5 w-5" />
+                      <span className="font-display text-[11px] leading-none font-bold whitespace-nowrap">
+                        {emote.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="card-25d rounded-2xl bg-[#FFFBF7]/95 px-4 py-2 text-center font-display text-xs font-bold text-[#432B1D]">
+              Siap giliranmu melawan {spectatingName || 'lawan'}!
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex items-end justify-between p-3 sm:p-5">

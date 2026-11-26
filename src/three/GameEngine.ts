@@ -7,12 +7,14 @@ import {
   CarpetId,
   CharacterId,
   CollectibleType,
+  EmoteId,
   EquippedLoadout,
   FloatingPopup,
   GamePhase,
   HudSnapshot,
   InGameDuration,
   LiveMatchState,
+  MABAR_EMOTES,
   MAX_PLAYER_LIVES,
   TIME_MODES,
 } from '../types/game';
@@ -572,6 +574,35 @@ export class GameEngine {
         this.remoteItems.delete(id);
       }
     }
+  }
+
+  public triggerEmoteEffect(emoteId: EmoteId) {
+    if (this.phase !== 'playing' && this.phase !== 'spectating') return;
+    const meta = MABAR_EMOTES.find((m) => m.id === emoteId);
+    const colorHex = meta?.accentHex ?? 0xffd166;
+    const isTaunt = meta?.tone === 'taunt';
+
+    const partnerRig = this.getPartnerRig();
+    const px = partnerRig.root.position.x;
+    const py = partnerRig.root.position.y;
+    const pz = partnerRig.root.position.z;
+
+    if (isTaunt) {
+      partnerRig.dizzyTimer = 0.55;
+      triggerSquash(partnerRig, 3.6);
+      this.cameraShake = Math.max(this.cameraShake, emoteId === 'taunt_boom' ? 0.42 : 0.22);
+    } else {
+      partnerRig.happyTimer = 0.9;
+      triggerSquash(partnerRig, 3.8);
+    }
+
+    // Double expanding pulse rings & particle burst on cheering/taunting partner
+    this.particles.burst(px, py + 1.35, pz + 0.3, colorHex, 16, emoteId === 'taunt_boom');
+    this.particles.spawnRing(px, py + 1.25, pz + 0.35, colorHex, 3.0);
+
+    // Subtle arena pulse ring around active runner so active player feels the emote live!
+    this.particles.spawnRing(this.playerX, this.playerY + 1.15, 0.35, colorHex, 2.7);
+    this.particles.burst(this.playerX, this.playerY + 1.35, 0.3, colorHex, 8, false);
   }
 
   public setPaused(paused: boolean) {

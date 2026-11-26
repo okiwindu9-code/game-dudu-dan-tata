@@ -417,6 +417,46 @@
         "eventLabel",
         "items"
       ]
+    },
+    "LiveEmoteEvent": {
+      "title": "LiveEmoteEvent",
+      "description": "Real-time interactive support or taunt emote sent by the waiting player during a Mabar turn.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the emote sender.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Display name of the sender.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "emoteId": {
+          "type": "string",
+          "enum": ["cheer_love", "cheer_fire", "cheer_clap", "taunt_bleh", "taunt_boom", "taunt_haha"],
+          "description": "Selected interactive support or taunt emote identifier."
+        },
+        "seq": {
+          "type": "integer",
+          "description": "Monotonic emote counter for triggering fresh animations and audio."
+        },
+        "sentAtMs": {
+          "type": "integer",
+          "description": "Client epoch millisecond timestamp when emote was triggered."
+        }
+      },
+      "required": [
+        "senderUid",
+        "senderName",
+        "emoteId",
+        "seq",
+        "sentAtMs"
+      ]
     }
   },
   "firestore": {
@@ -435,6 +475,10 @@
     "/matches/{matchId}/live/{liveDocId}": {
       "schema": { "$ref": "#/entities/LiveStreamFrame" },
       "description": "Dedicated real-time 3D spectator stream document (liveDocId == 'state')."
+    },
+    "/matches/{matchId}/live/emote": {
+      "schema": { "$ref": "#/entities/LiveEmoteEvent" },
+      "description": "Dedicated real-time interactive emote channel during live Mabar turns."
     }
   }
 }

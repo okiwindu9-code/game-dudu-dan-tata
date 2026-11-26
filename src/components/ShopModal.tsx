@@ -42,7 +42,7 @@ const CATEGORY_TABS: {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }[] = [
   { id: 'all', label: 'Semua', icon: Sparkles },
-  { id: 'hat', label: 'Topi & Hijab', icon: Crown },
+  { id: 'hat', label: 'Hiasan Kepala', icon: Crown },
   { id: 'glasses', label: 'Kacamata', icon: Glasses },
   { id: 'shirt', label: 'Baju', icon: Shirt },
   { id: 'costume', label: 'Topeng & Seragam', icon: Award },
@@ -117,6 +117,40 @@ function ShopItemArtwork({ item }: { item: ShopItem }) {
             strokeLinejoin="round"
           />
           <path d="M23 50 Q33 53 42 49" fill="none" stroke="#6B3920" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      )}
+      {item.id === 'hat_horns' && (
+        <svg viewBox="0 0 64 64" className="h-12 w-12" aria-hidden="true">
+          {/* Headband arc */}
+          <path
+            d="M15 46 Q32 33 49 46"
+            fill="none"
+            stroke="#432B1D"
+            strokeWidth="5.5"
+            strokeLinecap="round"
+          />
+          {/* Left curved horn */}
+          <path
+            d="M25 38 C16 33 10 21 16 12 C18 19 23 25 29 34 Z"
+            fill="#E63946"
+            stroke="#432B1D"
+            strokeWidth="2.8"
+            strokeLinejoin="round"
+          />
+          {/* Right curved horn */}
+          <path
+            d="M39 38 C48 33 54 21 48 12 C46 19 41 25 35 34 Z"
+            fill="#E63946"
+            stroke="#432B1D"
+            strokeWidth="2.8"
+            strokeLinejoin="round"
+          />
+          {/* Golden base cuffs */}
+          <ellipse cx="25" cy="37" rx="5.5" ry="2.6" transform="rotate(-24 25 37)" fill="#FFD166" stroke="#432B1D" strokeWidth="2" />
+          <ellipse cx="39" cy="37" rx="5.5" ry="2.6" transform="rotate(24 39 37)" fill="#FFD166" stroke="#432B1D" strokeWidth="2" />
+          {/* Glossy highlights */}
+          <path d="M16 20 Q18 25 22 30" fill="none" stroke="#FFCAD4" strokeWidth="2" strokeLinecap="round" />
+          <path d="M48 20 Q46 25 42 30" fill="none" stroke="#FFCAD4" strokeWidth="2" strokeLinecap="round" />
         </svg>
       )}
       {item.id === 'glasses_cool' && (

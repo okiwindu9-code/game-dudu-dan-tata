@@ -6,6 +6,7 @@
 3. **Participant-Only Match Access & Safe Invite Inbox**: `/matches/{matchId}` `get` is strictly restricted to `player1Uid` or `player2Uid`. `list` is restricted to `resource.data.player2Uid == request.auth.uid` so invited players receive real-time invites without scraping other users' matches.
 4. **Turn-Based Live Stream Authority & Cosmetic Sync**: Only `player1Uid` may write live spectator state (on `/matches/{matchId}/live/state` or legacy `liveState`) during `player1_turn` (and transition to `player2_turn` with `player1Result`), and only `player2Uid` may write live spectator state during `player2_turn` (and transition to `finished` with `player2Result` and `winnerUid`). `player1Loadout`/`player1Carpet` are set immutably at invite creation, and `player2Loadout`/`player2Carpet` are set once by `player2Uid` upon accepting the invite. All `/matches/{matchId}/live/{liveDocId}` access uses `get()` Master Gate verification on the parent match.
 5. **Terminal State Locking**: Once a match reaches `finished` or `declined`, no further updates are permitted.
+6. **Live Emote Channel Integrity**: `/matches/{matchId}/live/emote` may only be read or written by verified match participants (`player1Uid` or `player2Uid`) while the match is actively in `player1_turn` or `player2_turn`, and `senderUid` must equal `request.auth.uid` with strict allowlisted `emoteId` values.
 
 ## 2. "Dirty Dozen" Adversarial Payloads (Must All Return PERMISSION_DENIED)
 1. Unauthenticated `get` on `/users/uid_A`.

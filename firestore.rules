@@ -181,6 +181,17 @@ service cloud.firestore {
         ));
     }
 
+    function isValidLiveEmote(em) {
+      return em is map
+        && em.keys().hasAll(['senderUid', 'senderName', 'emoteId', 'seq', 'sentAtMs'])
+        && em.keys().hasOnly(['senderUid', 'senderName', 'emoteId', 'seq', 'sentAtMs'])
+        && isValidId(em.senderUid)
+        && em.senderName is string && em.senderName.size() >= 1 && em.senderName.size() <= 40
+        && em.emoteId in ['cheer_love', 'cheer_fire', 'cheer_clap', 'taunt_bleh', 'taunt_boom', 'taunt_haha']
+        && em.seq is int && em.seq >= 1 && em.seq <= 1000000
+        && em.sentAtMs is int && em.sentAtMs >= 0;
+    }
+
     function isValidTurnMatch(data, matchId) {
       return data.keys().hasAll([
           'matchId', 'durationSec', 'status',
@@ -232,6 +243,11 @@ service cloud.firestore {
           get(/databases/$(database)/documents/matches/$(matchId)).data.player1Uid == request.auth.uid
           || get(/databases/$(database)/documents/matches/$(matchId)).data.player2Uid == request.auth.uid
         );
+    }
+
+    function isMatchLiveTurn(matchId) {
+      return isMatchParticipant(matchId)
+        && get(/databases/$(database)/documents/matches/$(matchId)).data.status in ['player1_turn', 'player2_turn'];
     }
 
     function isActiveTurnOwner(matchId) {
@@ -410,30 +426,55 @@ service cloud.firestore {
         && existing().player1Uid == request.auth.uid
         && existing().status == 'invited';
 
-      // Dedicated real-time spectator stream document (lock-free from parent TurnMatch lifecycle)
+      // Dedicated real-time spectator stream & interactive emote documents
       match /live/{liveDocId} {
         allow get: if isValidId(matchId)
           && isValidId(liveDocId)
-          && liveDocId == 'state'
+          && liveDocId in ['state', 'emote']
           && isMatchParticipant(matchId);
         allow list: if false;
         allow create: if isValidId(matchId)
           && isValidId(liveDocId)
-          && liveDocId == 'state'
-          && isValidLiveState(incoming())
-          && incoming().turnUid == request.auth.uid
-          && isActiveTurnOwner(matchId);
+          && (
+            (
+              liveDocId == 'state'
+              && isValidLiveState(incoming())
+              && incoming().turnUid == request.auth.uid
+              && isActiveTurnOwner(matchId)
+            )
+            ||
+            (
+              liveDocId == 'emote'
+              && isValidLiveEmote(incoming())
+              && incoming().senderUid == request.auth.uid
+              && isMatchLiveTurn(matchId)
+            )
+          );
         allow update: if isValidId(matchId)
           && isValidId(liveDocId)
-          && liveDocId == 'state'
-          && isValidLiveState(incoming())
-          && incoming().turnUid == request.auth.uid
-          && isActiveTurnOwner(matchId)
-          && incoming().diff(existing()).affectedKeys().hasOnly([
-            'turnUid', 'charId', 'x', 'y', 'vx', 'vy',
-            'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
-            'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
-          ]);
+          && (
+            (
+              liveDocId == 'state'
+              && isValidLiveState(incoming())
+              && incoming().turnUid == request.auth.uid
+              && isActiveTurnOwner(matchId)
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'turnUid', 'charId', 'x', 'y', 'vx', 'vy',
+                'score', 'timeLeft', 'lives', 'combo', 'maxCombo',
+                'itemsCaught', 'feverActive', 'seq', 'eventLabel', 'items'
+              ])
+            )
+            ||
+            (
+              liveDocId == 'emote'
+              && isValidLiveEmote(incoming())
+              && incoming().senderUid == request.auth.uid
+              && isMatchLiveTurn(matchId)
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'senderUid', 'senderName', 'emoteId', 'seq', 'sentAtMs'
+              ])
+            )
+          );
         allow delete: if false;
       }
     }

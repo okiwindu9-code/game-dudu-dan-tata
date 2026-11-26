@@ -1,4 +1,5 @@
 // Rich procedural Web Audio API sound & haptic vibration engine with spatial panning & noise bursts
+import type { EmoteId } from '../types/game';
 
 const PENTATONIC_RATIOS = [
   1.0, // C
@@ -519,6 +520,98 @@ class SoundEngine {
       overtoneVol: 0.08,
     });
     this.vibrate([20, 30, 42]);
+  }
+
+  public playEmote(emoteId: EmoteId) {
+    if (emoteId === 'cheer_love') {
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+        this.playTone(f, {
+          type: 'sine',
+          delay: i * 0.045,
+          duration: 0.16,
+          volume: 0.1,
+          overtoneVol: 0.04,
+        });
+      });
+      this.vibrate([14, 18, 20]);
+    } else if (emoteId === 'cheer_fire') {
+      [440, 587.33, 783.99, 1174.66].forEach((f, i) => {
+        this.playTone(f, {
+          type: 'triangle',
+          delay: i * 0.04,
+          duration: 0.15,
+          volume: 0.11,
+          overtoneVol: 0.04,
+        });
+      });
+      this.playNoiseBurst({
+        duration: 0.12,
+        volume: 0.045,
+        filterType: 'bandpass',
+        freq: 1400,
+        endFreq: 3400,
+      });
+      this.vibrate([18, 16, 26]);
+    } else if (emoteId === 'cheer_clap') {
+      [0, 0.09, 0.18].forEach((d, idx) => {
+        this.playNoiseBurst({
+          delay: d,
+          duration: 0.055,
+          volume: 0.08,
+          filterType: 'bandpass',
+          freq: 2200 + idx * 250,
+        });
+      });
+      this.playTone(880, {
+        type: 'sine',
+        delay: 0.06,
+        duration: 0.18,
+        volume: 0.09,
+        overtoneVol: 0.03,
+      });
+      this.vibrate([12, 24, 14]);
+    } else if (emoteId === 'taunt_bleh') {
+      this.playTone(360, {
+        type: 'triangle',
+        endFreq: 560,
+        duration: 0.1,
+        volume: 0.11,
+      });
+      this.playTone(560, {
+        type: 'sawtooth',
+        delay: 0.09,
+        endFreq: 250,
+        duration: 0.16,
+        volume: 0.075,
+      });
+      this.vibrate([18, 22, 18]);
+    } else if (emoteId === 'taunt_boom') {
+      this.playTone(540, {
+        type: 'square',
+        endFreq: 360,
+        duration: 0.11,
+        volume: 0.07,
+      });
+      this.playTone(480, {
+        type: 'square',
+        delay: 0.12,
+        endFreq: 260,
+        duration: 0.14,
+        volume: 0.075,
+      });
+      this.vibrate([26, 24, 34]);
+    } else {
+      // taunt_haha
+      [659.25, 587.33, 659.25, 783.99].forEach((f, i) => {
+        this.playTone(f, {
+          type: 'triangle',
+          delay: i * 0.065,
+          duration: 0.08,
+          volume: 0.1,
+        });
+      });
+      this.vibrate([14, 18, 14, 18]);
+    }
   }
 
   public playGameOver() {

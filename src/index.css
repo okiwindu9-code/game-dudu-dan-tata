@@ -67,3 +67,83 @@
   border: 2.5px solid #432B1D;
   box-shadow: 0 6px 0 rgba(67, 43, 29, 0.92);
 }
+
+@keyframes emotePopPulse {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.55) rotate(-6deg);
+  }
+  16% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.12) rotate(3deg);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-8px) scale(0.96) rotate(-2deg);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-10px) scale(1.06) rotate(2deg);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(-14px) scale(1.0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-34px) scale(0.86) rotate(0deg);
+  }
+}
+
+@keyframes emoteShockwave {
+  0% {
+    opacity: 0.88;
+    transform: scale(0.65);
+  }
+  65% {
+    opacity: 0.35;
+    transform: scale(1.75);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.15);
+  }
+}
+
+@keyframes emoteIconWiggle {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.22) rotate(-10deg);
+  }
+  50% {
+    transform: scale(1.08) rotate(10deg);
+  }
+  75% {
+    transform: scale(1.18) rotate(-6deg);
+  }
+}
+
+.animate-emote-pop {
+  animation: emotePopPulse 2.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-emote-ring {
+  animation: emoteShockwave 0.95s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.animate-emote-wiggle {
+  animation: emoteIconWiggle 0.55s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-emote-pop,
+  .animate-emote-ring,
+  .animate-emote-wiggle,
+  .animate-float-score {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+

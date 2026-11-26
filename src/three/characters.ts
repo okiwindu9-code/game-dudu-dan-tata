@@ -432,6 +432,59 @@ function buildHatMesh(hatId: HatId): THREE.Group {
     const gem = createOutlinedPart(gemGeo, createCelMaterial(0xff6b8b), 0.02);
     gem.position.set(0, 0.11, 0.3);
     g.add(gem);
+  } else if (hatId === 'hat_horns') {
+    const hornMat = createCelMaterial(0xe63946);
+    const goldMat = createCelMaterial(0xffd166);
+    const bandMat = createCelMaterial(0x432b1d);
+
+    // Sleek headband arc sitting snugly between the bear ears
+    const bandGeo = new THREE.TorusGeometry(0.56, 0.042, 10, 26, Math.PI * 0.72);
+    const band = createOutlinedPart(bandGeo, bandMat, 0.015, { castShadow: false });
+    band.position.set(0, -0.22, 0.04);
+    band.rotation.z = Math.PI * 0.14;
+    g.add(band);
+
+    // Build curved tapered chibi horn using LatheGeometry + gentle curve tilt
+    const hornProfile = [
+      new THREE.Vector2(0.0, 0.0),
+      new THREE.Vector2(0.115, 0.02),
+      new THREE.Vector2(0.105, 0.12),
+      new THREE.Vector2(0.082, 0.24),
+      new THREE.Vector2(0.052, 0.36),
+      new THREE.Vector2(0.022, 0.44),
+      new THREE.Vector2(0.0, 0.46),
+    ];
+    const hornBaseGeo = new THREE.LatheGeometry(hornProfile, 18);
+
+    const makeHorn = (side: -1 | 1): THREE.Group => {
+      const hornAnchor = new THREE.Group();
+      hornAnchor.position.set(side * 0.31, 0.03, 0.06);
+      hornAnchor.rotation.z = -side * 0.36;
+      hornAnchor.rotation.x = 0.16;
+
+      // Golden collar ring at horn base
+      const ringGeo = new THREE.TorusGeometry(0.118, 0.028, 10, 20);
+      ringGeo.rotateX(Math.PI / 2);
+      const ring = createOutlinedPart(ringGeo, goldMat, 0.018);
+      ring.position.y = 0.015;
+      hornAnchor.add(ring);
+
+      // Lower curved horn shaft
+      const shaft = createOutlinedPart(hornBaseGeo, hornMat, 0.03);
+      hornAnchor.add(shaft);
+
+      // Cute slightly inward-curved horn tip accent
+      const tipGeo = new THREE.ConeGeometry(0.058, 0.2, 14);
+      const tip = createOutlinedPart(tipGeo, hornMat, 0.024);
+      tip.position.set(-side * 0.035, 0.42, 0.02);
+      tip.rotation.z = side * 0.34;
+      tip.rotation.x = 0.12;
+      hornAnchor.add(tip);
+
+      return hornAnchor;
+    };
+
+    g.add(makeHorn(-1), makeHorn(1));
   }
 
   return g;

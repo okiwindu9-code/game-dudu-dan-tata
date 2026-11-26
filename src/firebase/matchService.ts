@@ -14,11 +14,14 @@ import {
   CharacterId,
   CollectibleType,
   CostumeId,
+  EmoteId,
   EquippedLoadout,
   GlassesId,
   HatId,
   InGameDuration,
+  LiveEmoteEvent,
   LiveMatchState,
+  MABAR_EMOTES,
   PlayerDirectoryEntry,
   ShirtId,
   TurnMatch,
@@ -302,6 +305,64 @@ export function subscribeLiveMatchState(
       }
       const raw = snap.data() as LiveMatchState;
       onFrame(sanitizeLiveState(raw));
+    },
+    (err) => {
+      try {
+        handleFirestoreError(err, OperationType.GET, path);
+      } catch (wrapped) {
+        onError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
+    },
+  );
+}
+
+const VALID_EMOTE_IDS = new Set<EmoteId>(MABAR_EMOTES.map((m) => m.id));
+
+function sanitizeLiveEmote(em: Partial<LiveEmoteEvent>): LiveEmoteEvent {
+  const emoteId: EmoteId =
+    typeof em.emoteId === 'string' && VALID_EMOTE_IDS.has(em.emoteId as EmoteId)
+      ? (em.emoteId as EmoteId)
+      : 'cheer_love';
+
+  return {
+    senderUid: String(em.senderUid || '').slice(0, 128),
+    senderName: sanitizeName(em.senderName),
+    emoteId,
+    seq: clampInt(Number(em.seq ?? 1), 1, 1000000),
+    sentAtMs: clampInt(Number(em.sentAtMs ?? Date.now()), 0, 9999999999999),
+  };
+}
+
+export async function pushLiveEmote(
+  matchId: string,
+  emote: LiveEmoteEvent,
+): Promise<void> {
+  const path = `matches/${matchId}/live/emote`;
+  const ref = doc(db, 'matches', matchId, 'live', 'emote');
+
+  try {
+    await setDoc(ref, sanitizeLiveEmote(emote));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export function subscribeLiveEmote(
+  matchId: string,
+  onEmote: (emote: LiveEmoteEvent | null) => void,
+  onError: (error: Error) => void,
+): () => void {
+  const path = `matches/${matchId}/live/emote`;
+  const ref = doc(db, 'matches', matchId, 'live', 'emote');
+
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (!snap.exists()) {
+        onEmote(null);
+        return;
+      }
+      onEmote(sanitizeLiveEmote(snap.data() as Partial<LiveEmoteEvent>));
     },
     (err) => {
       try {

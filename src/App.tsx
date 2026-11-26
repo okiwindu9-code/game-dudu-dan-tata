@@ -3,7 +3,7 @@ import { onAuthStateChanged, type User } from 'firebase/auth';
 import { soundEngine } from './audio/soundEngine';
 import { CharacterDashboard } from './components/CharacterDashboard';
 import { ExchangeModal } from './components/ExchangeModal';
-import { GameHUD } from './components/GameHUD';
+import { GameHUD, type EmotePopupItem } from './components/GameHUD';
 import { GameOverModal } from './components/GameOverModal';
 import { ShopModal } from './components/ShopModal';
 import {
@@ -23,9 +23,11 @@ import {
   declineOrCancelInvite,
   finishPlayer1Turn,
   finishPlayer2Turn,
+  pushLiveEmote,
   pushLiveMatchState,
   sendMabarInvite,
   subscribeIncomingInvites,
+  subscribeLiveEmote,
   subscribeLiveMatchState,
   subscribeMatch,
 } from './firebase/matchService';
@@ -35,6 +37,7 @@ import {
   CarpetId,
   CharacterId,
   CostumeId,
+  EmoteId,
   EquippedLoadout,
   ExchangeTier,
   FloatingPopup,
@@ -208,6 +211,9 @@ export default function App() {
   const [matchError, setMatchError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<AuthErrorDetail | null>(null);
   const [matchBusy, setMatchBusy] = useState(false);
+  const [emotePopups, setEmotePopups] = useState<EmotePopupItem[]>([]);
+  const [emoteCooldown, setEmoteCooldown] = useState(false);
+  const [lastTappedEmote, setLastTappedEmote] = useState<EmoteId | null>(null);
 
   const selectedCharRef = useRef<CharacterId>(selectedCharacter);
   selectedCharRef.current = selectedCharacter;
@@ -239,6 +245,10 @@ export default function App() {
   const pendingLiveFrameRef = useRef<LiveMatchState | null>(null);
   const launchedMatchPhaseRef = useRef<string | null>(null);
   const spectatorTurnKeyRef = useRef<string | null>(null);
+  const emoteSeqRef = useRef(0);
+  const emotePopupKeyRef = useRef(1);
+  const lastSeenEmoteKeyRef = useRef('');
+  const emoteMountTimeRef = useRef(Date.now());
 
   const saveAndSync = useCallback((next: PlayerSaveStore) => {
     saveStoreRef.current = next;
@@ -363,6 +373,8 @@ export default function App() {
       setOverModal('none');
       setShowInviteModal(false);
       setPopups([]);
+      setEmotePopups([]);
+      emoteMountTimeRef.current = Date.now();
       setHud({
         ...INITIAL_HUD,
         lives: MAX_PLAYER_LIVES,
@@ -400,6 +412,8 @@ export default function App() {
       setOverModal('none');
       setShowInviteModal(false);
       setPopups([]);
+      setEmotePopups([]);
+      emoteMountTimeRef.current = Date.now();
       setHud({
         ...INITIAL_HUD,
         lives: MAX_PLAYER_LIVES,
@@ -629,6 +643,91 @@ export default function App() {
 
     return () => unsub();
   }, [activeMatchId, phase, user]);
+
+  const triggerEmotePopup = useCallback(
+    (emoteId: EmoteId, senderName: string, isMine: boolean) => {
+      soundEngine.playEmote(emoteId);
+      engineRef.current?.triggerEmoteEffect(emoteId);
+      const key = emotePopupKeyRef.current++;
+      setEmotePopups((prev) => [
+        ...prev.slice(-2),
+        { key, emoteId, senderName, isMine },
+      ]);
+      window.setTimeout(() => {
+        setEmotePopups((prev) => prev.filter((item) => item.key !== key));
+      }, 2400);
+    },
+    [],
+  );
+
+  // Real-time interactive emote listener (/matches/{matchId}/live/emote)
+  useEffect(() => {
+    if (!user || !activeMatchId || (phase !== 'playing' && phase !== 'spectating')) {
+      return;
+    }
+
+    const unsub = subscribeLiveEmote(
+      activeMatchId,
+      (emote) => {
+        if (!emote) return;
+        const curPhase = phaseRef.current;
+        if (curPhase !== 'playing' && curPhase !== 'spectating') return;
+
+        // Keep local monotonic sequence counter above remote sequence across turns
+        emoteSeqRef.current = Math.max(emoteSeqRef.current, emote.seq);
+
+        if (emote.senderUid === user.uid) return;
+        if (emote.sentAtMs < emoteMountTimeRef.current - 3500) return;
+
+        const dedupeKey = `${emote.seq}:${emote.sentAtMs}:${emote.senderUid}`;
+        if (lastSeenEmoteKeyRef.current === dedupeKey) return;
+        lastSeenEmoteKeyRef.current = dedupeKey;
+
+        triggerEmotePopup(emote.emoteId, emote.senderName, false);
+      },
+      (err) => {
+        console.warn('Live emote stream warning:', err);
+      },
+    );
+
+    return () => unsub();
+  }, [activeMatchId, phase, triggerEmotePopup, user]);
+
+  const handleSendEmote = useCallback(
+    (emoteId: EmoteId) => {
+      const curUser = userRef.current;
+      const curMatch = activeMatchRef.current;
+      if (!curUser || !curMatch || emoteCooldown) return;
+      if (curMatch.status !== 'player1_turn' && curMatch.status !== 'player2_turn') return;
+
+      setEmoteCooldown(true);
+      setLastTappedEmote(emoteId);
+      window.setTimeout(() => {
+        setLastTappedEmote(null);
+        setEmoteCooldown(false);
+      }, 620);
+
+      emoteSeqRef.current += 1;
+      const senderName = (curUser.displayName || 'Kamu').trim().slice(0, 40) || 'Kamu';
+      triggerEmotePopup(emoteId, senderName, true);
+
+      pushLiveEmote(curMatch.matchId, {
+        senderUid: curUser.uid,
+        senderName,
+        emoteId,
+        seq: emoteSeqRef.current,
+        sentAtMs: Date.now(),
+      }).catch((err) => {
+        console.warn('Failed sending emote:', err);
+      });
+    },
+    [emoteCooldown, triggerEmotePopup],
+  );
+
+  const handleDismissEmote = useCallback((key: number) => {
+    soundEngine.playClick();
+    setEmotePopups((prev) => prev.filter((item) => item.key !== key));
+  }, []);
 
   const handlePopup = useCallback((popup: FloatingPopup) => {
     setPopups((prev) => [...prev.slice(-8), popup]);
@@ -1183,6 +1282,7 @@ export default function App() {
     spectatorTurnKeyRef.current = null;
     setOverModal('none');
     setPopups([]);
+    setEmotePopups([]);
     engineRef.current?.returnToMenu();
     restoreLocalAppearance();
     phaseRef.current = 'menu';
@@ -1467,6 +1567,11 @@ export default function App() {
               startMyDuelTurn(activeMatch, 'player2');
             }
           }}
+          emotePopups={emotePopups}
+          emoteCooldown={emoteCooldown}
+          lastTappedEmote={lastTappedEmote}
+          onSendEmote={handleSendEmote}
+          onDismissEmote={handleDismissEmote}
           muted={muted}
           vibrationEnabled={vibrationEnabled}
           onToggleMute={handleToggleMute}
