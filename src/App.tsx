@@ -232,6 +232,8 @@ export default function App() {
   activeDuelTurnRef.current = activeDuelTurn;
 
   const liveStreamBusyRef = useRef(false);
+  const liveStreamPromiseRef = useRef<Promise<void> | null>(null);
+  const liveStreamEpochRef = useRef(0);
   const pendingLiveFrameRef = useRef<LiveMatchState | null>(null);
   const launchedMatchPhaseRef = useRef<string | null>(null);
   const spectatorTurnKeyRef = useRef<string | null>(null);
@@ -312,7 +314,9 @@ export default function App() {
     };
     launchedMatchPhaseRef.current = `${match.matchId}:${match.status}:${role}`;
     spectatorTurnKeyRef.current = null;
+    liveStreamEpochRef.current += 1;
     pendingLiveFrameRef.current = null;
+    activeMatchRef.current = match;
     activeDuelTurnRef.current = duelObj;
     phaseRef.current = 'playing';
     selectedCharRef.current = turnChar;
@@ -375,6 +379,11 @@ export default function App() {
       activeMatchId,
       (match) => {
         if (!match) {
+          liveStreamEpochRef.current += 1;
+          pendingLiveFrameRef.current = null;
+          activeDuelTurnRef.current = null;
+          activeMatchRef.current = null;
+          setActiveDuelTurn(null);
           setActiveMatch(null);
           setActiveMatchId(null);
           localRoleRef.current = null;
@@ -383,6 +392,7 @@ export default function App() {
           spectatorTurnKeyRef.current = null;
           return;
         }
+        activeMatchRef.current = match;
         setActiveMatch(match);
 
         const role =
@@ -390,7 +400,10 @@ export default function App() {
           (user.uid === match.player2Uid ? 'player2' : 'player1');
 
         if (match.status === 'declined') {
+          liveStreamEpochRef.current += 1;
+          pendingLiveFrameRef.current = null;
           activeDuelTurnRef.current = null;
+          activeMatchRef.current = null;
           setActiveDuelTurn(null);
           setActiveMatchId(null);
           setActiveMatch(null);
@@ -473,6 +486,8 @@ export default function App() {
         }
 
         if (match.status === 'finished') {
+          liveStreamEpochRef.current += 1;
+          pendingLiveFrameRef.current = null;
           activeDuelTurnRef.current = null;
           setActiveDuelTurn(null);
           launchedMatchPhaseRef.current = null;
@@ -508,29 +523,45 @@ export default function App() {
   }, []);
 
   const flushLiveFrame = useCallback((matchId: string, payload: LiveMatchState) => {
+    const epoch = liveStreamEpochRef.current;
     liveStreamBusyRef.current = true;
-    pushLiveMatchState(matchId, payload)
+    const req = pushLiveMatchState(matchId, payload)
       .catch((err) => {
-        console.error('Live stream frame skipped:', err);
+        console.warn('Live stream frame skipped:', err);
       })
       .finally(() => {
+        if (liveStreamPromiseRef.current === req) {
+          liveStreamPromiseRef.current = null;
+        }
         liveStreamBusyRef.current = false;
         const queued = pendingLiveFrameRef.current;
         const duelNow = activeDuelTurnRef.current;
-        if (queued && duelNow && duelNow.matchId === matchId) {
+        if (
+          queued &&
+          liveStreamEpochRef.current === epoch &&
+          duelNow &&
+          duelNow.matchId === matchId
+        ) {
           pendingLiveFrameRef.current = null;
           flushLiveFrame(matchId, queued);
         } else {
           pendingLiveFrameRef.current = null;
         }
       });
+    liveStreamPromiseRef.current = req;
   }, []);
 
   const handleLiveFrame = useCallback(
     (frame: Omit<LiveMatchState, 'turnUid'>) => {
       const duel = activeDuelTurnRef.current;
       const curUser = userRef.current;
-      if (!duel || !curUser) return;
+      const curMatch = activeMatchRef.current;
+      if (!duel || !curUser || phaseRef.current !== 'playing') return;
+
+      const expectedStatus = duel.role === 'player1' ? 'player1_turn' : 'player2_turn';
+      if (!curMatch || curMatch.matchId !== duel.matchId || curMatch.status !== expectedStatus) {
+        return;
+      }
 
       const fullFrame: LiveMatchState = {
         ...frame,
@@ -578,6 +609,7 @@ export default function App() {
         durationUsed: Math.max(1, duel.durationSec - finalHud.timeLeft),
       };
 
+      liveStreamEpochRef.current += 1;
       pendingLiveFrameRef.current = null;
       activeDuelTurnRef.current = null;
       setActiveDuelTurn(null);
@@ -597,6 +629,10 @@ export default function App() {
           phaseRef.current = 'menu';
           setPhase('menu');
         }
+        // Wait for any in-flight liveState update to finish before advancing match status
+        if (liveStreamPromiseRef.current) {
+          await liveStreamPromiseRef.current.catch(() => undefined);
+        }
         try {
           await finishPlayer1Turn(duel.matchId, turnResult);
         } catch (err) {
@@ -609,6 +645,9 @@ export default function App() {
         phaseRef.current = 'menu';
         setPhase('menu');
         setShowInviteModal(true);
+        if (liveStreamPromiseRef.current) {
+          await liveStreamPromiseRef.current.catch(() => undefined);
+        }
         try {
           if (activeMatchRef.current) {
             await finishPlayer2Turn(activeMatchRef.current, turnResult);
@@ -885,6 +924,7 @@ export default function App() {
 
       localRoleRef.current = 'player1';
       spectatorTurnKeyRef.current = null;
+      activeMatchRef.current = match;
       setLocalRole('player1');
       setActiveMatch(match);
       setActiveMatchId(match.matchId);
@@ -920,7 +960,9 @@ export default function App() {
         });
       }
 
-      setActiveMatch({ ...match, player2Char: myChar, status: 'player1_turn' });
+      const nextMatch: TurnMatch = { ...match, player2Char: myChar, status: 'player1_turn' };
+      activeMatchRef.current = nextMatch;
+      setActiveMatch(nextMatch);
       enterSpectatorArena(
         match.player1Char,
         match.durationSec,
@@ -950,6 +992,7 @@ export default function App() {
     } catch (err) {
       console.error(err);
     }
+    activeMatchRef.current = null;
     setActiveMatchId(null);
     setActiveMatch(null);
     localRoleRef.current = null;
@@ -959,6 +1002,7 @@ export default function App() {
 
   const handleClearMatch = () => {
     soundEngine.playClick();
+    activeMatchRef.current = null;
     setActiveMatchId(null);
     setActiveMatch(null);
     localRoleRef.current = null;
@@ -983,8 +1027,10 @@ export default function App() {
 
   const handleBackToMenu = () => {
     soundEngine.playClick();
+    liveStreamEpochRef.current += 1;
     pendingLiveFrameRef.current = null;
     activeDuelTurnRef.current = null;
+    activeMatchRef.current = null;
     setActiveDuelTurn(null);
     setActiveMatchId(null);
     setActiveMatch(null);

@@ -846,6 +846,7 @@ export class GameEngine {
 
     if (this.timeLeft <= 0) {
       this.timeLeft = 0;
+      this.streamLiveEnabled = false;
       this.phase = 'gameover';
       this.clearItems();
       soundEngine.playGameOver();
@@ -1182,14 +1183,15 @@ export class GameEngine {
       this.liveSeq += 1;
       this.pendingEventLabel = '-1 Nyawa!';
       this.pushHud(true);
-      this.emitLiveSnapshot(true);
 
       if (this.lives <= 0) {
+        this.streamLiveEnabled = false;
         const finalSnap = this.buildHudSnapshot();
         this.returnToMenu();
         this.callbacks.onLivesDepleted?.(finalSnap);
         return true;
       }
+      this.emitLiveSnapshot(true);
       return false;
     }
 
