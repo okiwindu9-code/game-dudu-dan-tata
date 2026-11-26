@@ -356,3 +356,36 @@ export interface PlayerSaveStore {
   };
   armedBoosters: ActiveBoosters;
 }
+
+export type RoomStatus = 'waiting' | 'player1_turn' | 'player2_turn' | 'finished';
+
+export interface TurnPlayerResult {
+  score: number;
+  maxCombo: number;
+  itemsCaught: number;
+  hazardsHit: number;
+  livesLeft: number;
+  durationUsed: number;
+}
+
+export interface TurnRoom {
+  roomCode: string;
+  durationSec: InGameDuration;
+  status: RoomStatus;
+  player1Uid: string;
+  player1Name: string;
+  player1Char: CharacterId;
+  player2Uid: string | null;
+  player2Name: string | null;
+  player2Char: CharacterId | null;
+  player1Result: TurnPlayerResult | null;
+  player2Result: TurnPlayerResult | null;
+  winnerUid: string | null;
+}
+
+export interface CloudUserProfile extends PlayerSaveStore {
+  uid: string;
+  displayName: string;
+  photoURL: string;
+}
+

@@ -1,0 +1,207 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Cloud profile and saved game progression for a signed-in Dudu & Tata player.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the player.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Player display name shown in profile and multiplayer rooms.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional profile avatar URL.",
+          "maxLength": 512
+        },
+        "tataBest": {
+          "type": "integer",
+          "description": "Highest solo score with Tata."
+        },
+        "duduBest": {
+          "type": "integer",
+          "description": "Highest solo score with Dudu."
+        },
+        "bestCombo": {
+          "type": "integer",
+          "description": "Highest combo streak achieved."
+        },
+        "totalPoints": {
+          "type": "integer",
+          "description": "Redeemable point balance."
+        },
+        "rupiahBalance": {
+          "type": "integer",
+          "description": "In-game Rupiah balance for shop purchases."
+        },
+        "exchangeCount": {
+          "type": "integer",
+          "description": "Total point-to-Rupiah redemptions completed."
+        },
+        "ownedItems": {
+          "type": "array",
+          "description": "Purchased shop item IDs."
+        },
+        "equippedByChar": {
+          "type": "object",
+          "description": "Equipped hat, glasses, shirt, and bag IDs for dudu and tata."
+        },
+        "equippedCarpet": {
+          "type": "string",
+          "description": "Active patterned carpet ID.",
+          "maxLength": 40
+        },
+        "boosterCounts": {
+          "type": "object",
+          "description": "Stock counts for boost_speed and boost_time2x."
+        },
+        "armedBoosters": {
+          "type": "object",
+          "description": "Whether speedBoost and time2xBoost are armed for next round."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when cloud profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when cloud profile was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "photoURL",
+        "tataBest",
+        "duduBest",
+        "bestCombo",
+        "totalPoints",
+        "rupiahBalance",
+        "exchangeCount",
+        "ownedItems",
+        "equippedByChar",
+        "equippedCarpet",
+        "boosterCounts",
+        "armedBoosters",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TurnRoom": {
+      "title": "TurnRoom",
+      "description": "Online turn-based 2-player duel room keyed by 6-character room code.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "description": "6-character uppercase alphanumeric join code.",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[A-Z0-9]{6}$"
+        },
+        "durationSec": {
+          "type": "integer",
+          "description": "Round duration in seconds (45, 60, or 90)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "player1_turn", "player2_turn", "finished"],
+          "description": "Turn-based match lifecycle status."
+        },
+        "player1Uid": {
+          "type": "string",
+          "description": "Host player Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "player1Name": {
+          "type": "string",
+          "description": "Host player display name.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "player1Char": {
+          "type": "string",
+          "enum": ["dudu", "tata"],
+          "description": "Character selected by Player 1."
+        },
+        "player2Uid": {
+          "type": "string",
+          "description": "Guest player Firebase Auth UID (null while waiting).",
+          "maxLength": 128
+        },
+        "player2Name": {
+          "type": "string",
+          "description": "Guest player display name (null while waiting).",
+          "maxLength": 40
+        },
+        "player2Char": {
+          "type": "string",
+          "description": "Character selected by Player 2 (null while waiting).",
+          "maxLength": 10
+        },
+        "player1Result": {
+          "type": "object",
+          "description": "Submitted score summary after Player 1 finishes."
+        },
+        "player2Result": {
+          "type": "object",
+          "description": "Submitted score summary after Player 2 finishes."
+        },
+        "winnerUid": {
+          "type": "string",
+          "description": "Winning player UID or 'draw' once finished.",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when room was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest room update."
+        }
+      },
+      "required": [
+        "roomCode",
+        "durationSec",
+        "status",
+        "player1Uid",
+        "player1Name",
+        "player1Char",
+        "player2Uid",
+        "player2Name",
+        "player2Char",
+        "player1Result",
+        "player2Result",
+        "winnerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private player profile and cloud save progression owned by userId."
+    },
+    "/rooms/{roomCode}": {
+      "schema": { "$ref": "#/entities/TurnRoom" },
+      "description": "Turn-based multiplayer duel room accessed by exact roomCode."
+    }
+  }
+}

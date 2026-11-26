@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
+import type { User } from 'firebase/auth';
 import {
   AlertTriangle,
   BookOpen,
   Clock,
+  Cloud,
   Coins,
   Heart,
   Home,
+  LogIn,
+  LogOut,
   Play,
   Plus,
   Settings,
   ShoppingBag,
   Smartphone,
   Sparkles,
+  Swords,
   Trophy,
   Users,
   Volume2,
@@ -30,9 +35,11 @@ import {
   ShopCategory,
   ShopItem,
   TIME_MODES,
+  TurnRoom,
 } from '../types/game';
 import { ExchangeModal, formatRupiah } from './ExchangeModal';
 import { GuideModal } from './GuideModal';
+import { MultiplayerModal } from './MultiplayerModal';
 import { ShopModal } from './ShopModal';
 
 interface CharacterDashboardProps {
@@ -41,10 +48,27 @@ interface CharacterDashboardProps {
   durationMode: InGameDuration;
   onSelectDuration: (mode: InGameDuration) => void;
   saveStore: PlayerSaveStore;
+  user: User | null;
+  authBusy: boolean;
+  cloudSynced: boolean;
+  showMultiplayer: boolean;
+  activeRoom: TurnRoom | null;
+  localDuelRole: 'player1' | 'player2' | null;
+  roomError: string | null;
+  roomBusy: boolean;
   muted: boolean;
   vibrationEnabled: boolean;
   bombReturnNotice: string | null;
   onDismissBombNotice: () => void;
+  onGoogleLogin: () => void;
+  onGoogleLogout: () => void;
+  onOpenMultiplayer: () => void;
+  onCloseMultiplayer: () => void;
+  onCreateRoom: (charId: CharacterId, duration: InGameDuration) => void;
+  onJoinRoom: (roomCode: string, charId: CharacterId) => void;
+  onStartDuelTurn: () => void;
+  onCancelWaitingRoom: () => void;
+  onLeaveRoom: () => void;
   onToggleMute: () => void;
   onToggleVibration: () => void;
   onExchangePoints: (tier: ExchangeTier) => void;
@@ -68,10 +92,27 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
   durationMode,
   onSelectDuration,
   saveStore,
+  user,
+  authBusy,
+  cloudSynced,
+  showMultiplayer,
+  activeRoom,
+  localDuelRole,
+  roomError,
+  roomBusy,
   muted,
   vibrationEnabled,
   bombReturnNotice,
   onDismissBombNotice,
+  onGoogleLogin,
+  onGoogleLogout,
+  onOpenMultiplayer,
+  onCloseMultiplayer,
+  onCreateRoom,
+  onJoinRoom,
+  onStartDuelTurn,
+  onCancelWaitingRoom,
+  onLeaveRoom,
   onToggleMute,
   onToggleVibration,
   onExchangePoints,
@@ -85,6 +126,7 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
   const [shopTab, setShopTab] = useState<'all' | ShopCategory | null>(null);
   const [showCharacterDrawer, setShowCharacterDrawer] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const activeChar = CHARACTERS[selectedCharacter];
   const canRedeemAny = saveStore.totalPoints >= 500;
@@ -115,65 +157,76 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
       <header className="flex flex-col gap-2 px-3 pt-3 sm:mx-auto sm:w-full sm:max-w-3xl sm:px-6 sm:pt-4">
         {/* Top Row: Avatar · Points · Lives · Settings */}
         <div className="flex items-center justify-between gap-2">
-          {/* Avatar Box */}
+          {/* Profile Avatar Box (Opens Firebase Google Profile) */}
           <button
             type="button"
-            onClick={() => setShowCharacterDrawer((v) => !v)}
+            onClick={() => setShowProfileModal(true)}
             className="pointer-events-auto relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-[2.5px] border-[#432B1D] bg-[#FFFBF7] shadow-[0_3px_0_#432B1D] transition-transform active:translate-y-0.5 sm:h-12 sm:w-12"
-            aria-label="Pilih Karakter Dudu atau Tata"
+            aria-label="Profil Pemain Firebase"
           >
             <img
-              src="/assets/aistudio/images__1__876c8792.jpeg"
-              alt="Dudu dan Tata"
+              src={user?.photoURL || '/assets/aistudio/images__1__876c8792.jpeg'}
+              alt={user?.displayName || 'Profil Pemain'}
               className="h-full w-full object-cover"
+              referrerPolicy="no-referrer"
             />
+            {user && (
+              <span
+                className="absolute right-0.5 bottom-0.5 h-2.5 w-2.5 rounded-full border border-[#432B1D] bg-[#49C829]"
+                title="Profil Tersinkron"
+              />
+            )}
           </button>
 
-          {/* Center Status Counters (Points + Lives + Desktop Rupiah) */}
+          {/* Center Status Counters (Points + Rupiah + Lives) */}
           <div className="pointer-events-auto flex min-w-0 flex-1 items-center justify-center gap-1.5 sm:gap-2.5">
             {/* Coin / Points Counter */}
             <button
               type="button"
               onClick={() => setShowExchange(true)}
-              className="btn-25d flex h-10 items-center gap-1.5 rounded-2xl bg-[#FFFBF7] px-2.5 sm:px-3.5"
+              className="btn-25d flex h-10 items-center gap-1 rounded-2xl bg-[#FFFBF7] px-2 sm:gap-1.5 sm:px-3.5"
               title="Tukar Poin ke Rupiah"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#432B1D] bg-[#FFD166]">
+              <span className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full border-2 border-[#432B1D] bg-[#FFD166] sm:h-6 sm:w-6">
                 <Coins className="h-3.5 w-3.5 text-[#432B1D]" strokeWidth={2.75} />
               </span>
-              <span className="font-mono-num text-sm font-bold text-[#432B1D]">
+              <span className="font-mono-num text-xs font-bold text-[#432B1D] sm:text-sm">
                 {saveStore.totalPoints.toLocaleString('id-ID')}
               </span>
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-[#432B1D] bg-[#49C829] text-white">
+              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-[#432B1D] bg-[#49C829] text-white sm:h-5 sm:w-5">
                 <Plus className="h-3 w-3" strokeWidth={3} />
+              </span>
+            </button>
+
+            {/* Rupiah Pill */}
+            <button
+              type="button"
+              onClick={() => setShowExchange(true)}
+              className="btn-25d flex h-10 items-center gap-1 rounded-2xl bg-[#E8F8EE] px-2 sm:gap-1.5 sm:px-3"
+              title="Saldo Rupiah"
+            >
+              <Wallet className="h-4 w-4 text-[#2B9348]" strokeWidth={2.75} />
+              <span className="font-mono-num text-xs font-bold text-[#1F5C36] sm:hidden">
+                {formatCompactRupiah(saveStore.rupiahBalance)}
+              </span>
+              <span className="font-mono-num hidden text-xs font-bold text-[#1F5C36] sm:inline">
+                {formatRupiah(saveStore.rupiahBalance)}
               </span>
             </button>
 
             {/* Lives Counter */}
             <div
-              className="card-25d flex h-10 items-center gap-1.5 rounded-2xl bg-[#FFFBF7] px-2.5 sm:px-3.5"
+              className="card-25d flex h-10 items-center gap-1 rounded-2xl bg-[#FFFBF7] px-2 sm:gap-1.5 sm:px-3"
               title="Nyawa Awal Per Ronde"
             >
               <Heart
-                className="h-5 w-5 shrink-0 fill-[#E63946] text-[#432B1D]"
+                className="h-4.5 w-4.5 shrink-0 fill-[#E63946] text-[#432B1D] sm:h-5 sm:w-5"
                 strokeWidth={2.5}
               />
-              <span className="font-mono-num text-sm font-bold text-[#432B1D]">
+              <span className="font-mono-num text-xs font-bold text-[#432B1D] sm:text-sm">
                 {MAX_PLAYER_LIVES}
               </span>
             </div>
-
-            {/* Rupiah Pill (visible on sm+ in top strip; also on right medallion on mobile) */}
-            <button
-              type="button"
-              onClick={() => setShowExchange(true)}
-              className="btn-25d hidden h-10 items-center gap-1.5 rounded-2xl bg-[#E8F8EE] px-3 sm:flex"
-            >
-              <Wallet className="h-4 w-4 text-[#2B9348]" strokeWidth={2.75} />
-              <span className="font-mono-num text-xs font-bold text-[#1F5C36]">
-                {formatRupiah(saveStore.rupiahBalance)}
-              </span>
-            </button>
           </div>
 
           {/* Green Settings Gear Button */}
@@ -361,21 +414,21 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
 
         {/* Right Floating Medallions */}
         <div className="pointer-events-auto flex flex-col gap-3.5 self-start pt-4 sm:self-center sm:pt-0">
-          {/* Rupiah Wallet / Exchange Medallion */}
+          {/* Duel Online Turn-Based Medallion */}
           <button
             type="button"
-            onClick={() => setShowExchange(true)}
+            onClick={onOpenMultiplayer}
             className="group flex flex-col items-center focus:outline-none"
           >
             <div
               className={`flex h-14 w-14 items-center justify-center rounded-full border-[3px] border-[#432B1D] shadow-[0_4px_0_#432B1D] transition-transform group-hover:-translate-y-0.5 group-active:translate-y-0.5 sm:h-16 sm:w-16 ${
-                canRedeemAny ? 'bg-[#FFE066]' : 'bg-[#D8F5E3]'
+                activeRoom ? 'bg-[#FFD166]' : 'bg-[#FFE0EA]'
               }`}
             >
-              <Wallet className="h-6.5 w-6.5 text-[#1F5C36]" strokeWidth={2.75} />
+              <Swords className="h-6.5 w-6.5 text-[#432B1D]" strokeWidth={2.75} />
             </div>
-            <span className="-mt-2 rounded-lg border-2 border-[#432B1D] bg-[#2B9348] px-2 py-0.5 font-mono-num text-[11px] font-bold text-white shadow-[0_2px_0_#432B1D]">
-              {formatCompactRupiah(saveStore.rupiahBalance)}
+            <span className="-mt-2 rounded-lg border-2 border-[#432B1D] bg-[#D94F70] px-2 py-0.5 font-display text-[11px] font-bold text-white shadow-[0_2px_0_#432B1D]">
+              {activeRoom ? activeRoom.roomCode : 'Duel Online'}
             </span>
           </button>
 
@@ -634,6 +687,94 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
         </div>
       )}
 
+      {/* Firebase Profile Modal */}
+      {showProfileModal && (
+        <div className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-[#432B1D]/45 p-4">
+          <div className="card-25d w-full max-w-sm rounded-3xl bg-[#FFFBF7] p-5">
+            <div className="flex items-center justify-between border-b-2 border-[#432B1D]/15 pb-3">
+              <h2 className="font-display text-lg font-bold text-[#432B1D]">
+                Profil Pemain Cloud
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="btn-25d flex h-8 w-8 items-center justify-center rounded-xl bg-white text-[#432B1D]"
+                aria-label="Tutup Profil"
+              >
+                <X className="h-4 w-4" strokeWidth={2.75} />
+              </button>
+            </div>
+
+            {user ? (
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center gap-3 rounded-2xl border-2 border-[#432B1D]/20 bg-white p-3">
+                  <img
+                    src={user.photoURL || '/assets/aistudio/images__1__876c8792.jpeg'}
+                    alt={user.displayName || 'Pemain'}
+                    className="h-12 w-12 rounded-xl border-2 border-[#432B1D] object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-display text-base font-bold text-[#432B1D]">
+                      {user.displayName || 'Pemain Dudu & Tata'}
+                    </div>
+                    <div className="truncate text-[11px] font-semibold text-[#7A5B47]">
+                      {user.email}
+                    </div>
+                    <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-[#2B9348]">
+                      <Cloud className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      <span>{cloudSynced ? 'Tersinkron ke Firebase' : 'Menyinkronkan...'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-xl border border-[#432B1D]/20 bg-[#FFF2DF] p-2.5">
+                    <div className="text-[#7A5B47] font-semibold">Rekor Dudu</div>
+                    <div className="font-mono-num text-base font-bold text-[#432B1D]">
+                      {saveStore.duduBest}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[#432B1D]/20 bg-[#FFF2DF] p-2.5">
+                    <div className="text-[#7A5B47] font-semibold">Rekor Tata</div>
+                    <div className="font-mono-num text-base font-bold text-[#432B1D]">
+                      {saveStore.tataBest}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onGoogleLogout();
+                    setShowProfileModal(false);
+                  }}
+                  className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FFE3E6] py-2.5 font-display text-sm font-bold text-[#9B1C2E]"
+                >
+                  <LogOut className="h-4 w-4" strokeWidth={2.5} />
+                  Keluar Akun Google
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3 text-center">
+                <p className="text-xs leading-relaxed text-[#7A5B47]">
+                  Simpan progres poin, saldo Rupiah, item belanja, dan rekor ke cloud Firebase serta mainkan mode <strong>Duel Online Turn-Based</strong> bersama teman!
+                </p>
+                <button
+                  type="button"
+                  disabled={authBusy}
+                  onClick={onGoogleLogin}
+                  className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#49C829] py-3 font-display text-sm font-bold text-white disabled:opacity-60"
+                >
+                  <LogIn className="h-4.5 w-4.5" strokeWidth={2.5} />
+                  {authBusy ? 'Menghubungkan...' : 'Masuk dengan Google'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
 
       {showExchange && (
@@ -663,6 +804,26 @@ export const CharacterDashboard: React.FC<CharacterDashboardProps> = ({
             setShowExchange(true);
           }}
           onClose={() => setShopTab(null)}
+        />
+      )}
+
+      {showMultiplayer && (
+        <MultiplayerModal
+          user={user}
+          authBusy={authBusy}
+          selectedCharacter={selectedCharacter}
+          durationMode={durationMode}
+          activeRoom={activeRoom}
+          localRole={localDuelRole}
+          roomError={roomError}
+          roomBusy={roomBusy}
+          onGoogleLogin={onGoogleLogin}
+          onCreateRoom={onCreateRoom}
+          onJoinRoom={onJoinRoom}
+          onStartTurn={onStartDuelTurn}
+          onCancelWaitingRoom={onCancelWaitingRoom}
+          onLeaveRoom={onLeaveRoom}
+          onClose={onCloseMultiplayer}
         />
       )}
     </div>

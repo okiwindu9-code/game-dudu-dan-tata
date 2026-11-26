@@ -1,10 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { soundEngine } from './audio/soundEngine';
 import { CharacterDashboard } from './components/CharacterDashboard';
 import { ExchangeModal } from './components/ExchangeModal';
 import { GameHUD } from './components/GameHUD';
 import { GameOverModal } from './components/GameOverModal';
 import { ShopModal } from './components/ShopModal';
+import {
+  auth,
+  signInWithGooglePopup,
+  signOutFirebase,
+} from './firebase/config';
+import {
+  loadOrCreateCloudProfile,
+  syncCloudProfile,
+} from './firebase/profileService';
+import {
+  cancelWaitingRoom,
+  createTurnRoom,
+  joinTurnRoom,
+  submitPlayer1TurnResult,
+  submitPlayer2TurnResult,
+  subscribeTurnRoom,
+} from './firebase/roomService';
 import { GameEngine } from './three/GameEngine';
 import {
   ActiveBoosters,
@@ -24,6 +42,8 @@ import {
   ShirtId,
   ShopItem,
   TIME_MODES,
+  TurnPlayerResult,
+  TurnRoom,
 } from './types/game';
 
 const STORAGE_KEY = 'dudu_tata_save_v3';
@@ -154,6 +174,22 @@ export default function App() {
     isNewRecord: boolean;
   }>({ previousBest: 0, isNewRecord: false });
 
+  // Firebase Cloud Profile & Online Turn-Based Multiplayer state
+  const [user, setUser] = useState<User | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [cloudSynced, setCloudSynced] = useState(false);
+  const [showMultiplayer, setShowMultiplayer] = useState(false);
+  const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
+  const [activeRoom, setActiveRoom] = useState<TurnRoom | null>(null);
+  const [localDuelRole, setLocalDuelRole] = useState<'player1' | 'player2' | null>(null);
+  const [activeDuelTurn, setActiveDuelTurn] = useState<{
+    roomCode: string;
+    role: 'player1' | 'player2';
+    durationSec: InGameDuration;
+  } | null>(null);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomBusy, setRoomBusy] = useState(false);
+
   const selectedCharRef = useRef<CharacterId>(selectedCharacter);
   selectedCharRef.current = selectedCharacter;
 
@@ -162,6 +198,85 @@ export default function App() {
 
   const phaseRef = useRef<GamePhase>(phase);
   phaseRef.current = phase;
+
+  const userRef = useRef<User | null>(user);
+  userRef.current = user;
+
+  const activeRoomRef = useRef<TurnRoom | null>(activeRoom);
+  activeRoomRef.current = activeRoom;
+
+  const activeDuelTurnRef = useRef(activeDuelTurn);
+  activeDuelTurnRef.current = activeDuelTurn;
+
+  const saveAndSync = useCallback((next: PlayerSaveStore) => {
+    saveStoreRef.current = next;
+    setSaveStore(next);
+    persistSaveStore(next);
+    const curUser = userRef.current;
+    if (curUser) {
+      setCloudSynced(false);
+      syncCloudProfile(curUser, next)
+        .then(() => setCloudSynced(true))
+        .catch((err) => {
+          console.error('Cloud profile sync failed:', err);
+        });
+    }
+  }, []);
+
+  // Auth listener -> loads or creates Firestore Cloud Profile
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (nextUser) => {
+      setUser(nextUser);
+      if (!nextUser) {
+        setCloudSynced(false);
+        setActiveRoomCode(null);
+        setActiveRoom(null);
+        setLocalDuelRole(null);
+        return;
+      }
+      try {
+        const syncedStore = await loadOrCreateCloudProfile(
+          nextUser,
+          saveStoreRef.current,
+        );
+        saveStoreRef.current = syncedStore;
+        setSaveStore(syncedStore);
+        persistSaveStore(syncedStore);
+        engineRef.current?.applyLoadouts(
+          syncedStore.equippedByChar,
+          syncedStore.equippedCarpet,
+        );
+        setCloudSynced(true);
+      } catch (err) {
+        console.error('Failed loading cloud profile:', err);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Live Firestore room subscription
+  useEffect(() => {
+    if (!user || !activeRoomCode) {
+      setActiveRoom(null);
+      return;
+    }
+    const unsub = subscribeTurnRoom(
+      activeRoomCode,
+      (room) => {
+        if (!room) {
+          setActiveRoom(null);
+          setActiveRoomCode(null);
+          setLocalDuelRole(null);
+          return;
+        }
+        setActiveRoom(room);
+      },
+      (err) => {
+        setRoomError(err.message);
+      },
+    );
+    return () => unsub();
+  }, [user, activeRoomCode]);
 
   const handlePopup = useCallback((popup: FloatingPopup) => {
     setPopups((prev) => [...prev.slice(-8), popup]);
@@ -177,53 +292,118 @@ export default function App() {
     }, 180);
   }, []);
 
-  const handleGameOver = useCallback((finalHud: HudSnapshot) => {
-    const charId = selectedCharRef.current;
-    const current = saveStoreRef.current;
-    const prevBest = charId === 'dudu' ? current.duduBest : current.tataBest;
-    const isNewRecord = finalHud.score > prevBest && finalHud.score > 0;
+  const finalizeDuelTurn = useCallback(
+    async (
+      finalHud: HudSnapshot,
+      duel: { roomCode: string; role: 'player1' | 'player2'; durationSec: InGameDuration },
+    ) => {
+      const charId = selectedCharRef.current;
+      const current = saveStoreRef.current;
+      const updated: PlayerSaveStore = {
+        ...current,
+        tataBest:
+          charId === 'tata' ? Math.max(current.tataBest, finalHud.score) : current.tataBest,
+        duduBest:
+          charId === 'dudu' ? Math.max(current.duduBest, finalHud.score) : current.duduBest,
+        bestCombo: Math.max(current.bestCombo, finalHud.maxCombo),
+        totalPoints: current.totalPoints + finalHud.score,
+      };
+      saveAndSync(updated);
 
-    const updated: PlayerSaveStore = {
-      ...current,
-      tataBest:
-        charId === 'tata' ? Math.max(current.tataBest, finalHud.score) : current.tataBest,
-      duduBest:
-        charId === 'dudu' ? Math.max(current.duduBest, finalHud.score) : current.duduBest,
-      bestCombo: Math.max(current.bestCombo, finalHud.maxCombo),
-      totalPoints: current.totalPoints + finalHud.score,
-    };
+      const turnResult: TurnPlayerResult = {
+        score: finalHud.score,
+        maxCombo: finalHud.maxCombo,
+        itemsCaught: finalHud.itemsCaught,
+        hazardsHit: finalHud.hazardsHit,
+        livesLeft: finalHud.lives,
+        durationUsed: Math.max(1, duel.durationSec - finalHud.timeLeft),
+      };
 
-    setLastRecordInfo({ previousBest: prevBest, isNewRecord });
-    setSaveStore(updated);
-    persistSaveStore(updated);
-    setPhase('gameover');
-  }, []);
+      setActiveDuelTurn(null);
+      setPopups([]);
+      setOverModal('none');
+      engineRef.current?.returnToMenu();
+      setPhase('menu');
+      setShowMultiplayer(true);
 
-  const handleLivesDepleted = useCallback((finalHud: HudSnapshot) => {
-    const charId = selectedCharRef.current;
-    const current = saveStoreRef.current;
+      try {
+        if (duel.role === 'player1') {
+          await submitPlayer1TurnResult(duel.roomCode, turnResult);
+        } else if (activeRoomRef.current) {
+          await submitPlayer2TurnResult(activeRoomRef.current, turnResult);
+        }
+      } catch (err) {
+        setRoomError(
+          err instanceof Error ? err.message : 'Gagal mengirim skor giliran ke server.',
+        );
+      }
+    },
+    [saveAndSync],
+  );
 
-    const updated: PlayerSaveStore = {
-      ...current,
-      tataBest:
-        charId === 'tata' ? Math.max(current.tataBest, finalHud.score) : current.tataBest,
-      duduBest:
-        charId === 'dudu' ? Math.max(current.duduBest, finalHud.score) : current.duduBest,
-      bestCombo: Math.max(current.bestCombo, finalHud.maxCombo),
-      totalPoints: current.totalPoints + finalHud.score,
-    };
+  const handleGameOver = useCallback(
+    (finalHud: HudSnapshot) => {
+      const duel = activeDuelTurnRef.current;
+      if (duel) {
+        void finalizeDuelTurn(finalHud, duel);
+        return;
+      }
 
-    setSaveStore(updated);
-    persistSaveStore(updated);
-    setPopups([]);
-    setOverModal('none');
-    setBombReturnNotice(
-      finalHud.score > 0
-        ? `Nyawa habis terkena bom! +${finalHud.score} poin tetap masuk celengan.`
-        : 'Nyawa habis terkena 3 bom! Hati-hati hindari bom hitam ya.',
-    );
-    setPhase('menu');
-  }, []);
+      const charId = selectedCharRef.current;
+      const current = saveStoreRef.current;
+      const prevBest = charId === 'dudu' ? current.duduBest : current.tataBest;
+      const isNewRecord = finalHud.score > prevBest && finalHud.score > 0;
+
+      const updated: PlayerSaveStore = {
+        ...current,
+        tataBest:
+          charId === 'tata' ? Math.max(current.tataBest, finalHud.score) : current.tataBest,
+        duduBest:
+          charId === 'dudu' ? Math.max(current.duduBest, finalHud.score) : current.duduBest,
+        bestCombo: Math.max(current.bestCombo, finalHud.maxCombo),
+        totalPoints: current.totalPoints + finalHud.score,
+      };
+
+      setLastRecordInfo({ previousBest: prevBest, isNewRecord });
+      saveAndSync(updated);
+      setPhase('gameover');
+    },
+    [finalizeDuelTurn, saveAndSync],
+  );
+
+  const handleLivesDepleted = useCallback(
+    (finalHud: HudSnapshot) => {
+      const duel = activeDuelTurnRef.current;
+      if (duel) {
+        void finalizeDuelTurn(finalHud, duel);
+        return;
+      }
+
+      const charId = selectedCharRef.current;
+      const current = saveStoreRef.current;
+
+      const updated: PlayerSaveStore = {
+        ...current,
+        tataBest:
+          charId === 'tata' ? Math.max(current.tataBest, finalHud.score) : current.tataBest,
+        duduBest:
+          charId === 'dudu' ? Math.max(current.duduBest, finalHud.score) : current.duduBest,
+        bestCombo: Math.max(current.bestCombo, finalHud.maxCombo),
+        totalPoints: current.totalPoints + finalHud.score,
+      };
+
+      saveAndSync(updated);
+      setPopups([]);
+      setOverModal('none');
+      setBombReturnNotice(
+        finalHud.score > 0
+          ? `Nyawa habis terkena bom! +${finalHud.score} poin tetap masuk celengan.`
+          : 'Nyawa habis terkena 3 bom! Hati-hati hindari bom hitam ya.',
+      );
+      setPhase('menu');
+    },
+    [finalizeDuelTurn, saveAndSync],
+  );
 
   useEffect(() => {
     const container = canvasMountRef.current;
@@ -304,10 +484,10 @@ export default function App() {
           time2xBoost: nextTimeCount > 0 ? cur.armedBoosters.time2xBoost : false,
         },
       };
-      setSaveStore(nextStore);
-      persistSaveStore(nextStore);
+      saveAndSync(nextStore);
     }
 
+    setActiveDuelTurn(null);
     setRoundBoosters(active);
     setBombReturnNotice(null);
     setOverModal('none');
@@ -323,6 +503,120 @@ export default function App() {
     engineRef.current?.startGame(selectedCharacter, durationMode, active);
   };
 
+  const handleGoogleLogin = async () => {
+    soundEngine.playClick();
+    setRoomError(null);
+    setAuthBusy(true);
+    try {
+      await signInWithGooglePopup();
+    } catch (err) {
+      setRoomError(
+        err instanceof Error
+          ? err.message
+          : 'Login Google dibatalkan atau terblokir popup.',
+      );
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    soundEngine.playClick();
+    await signOutFirebase();
+  };
+
+  const handleCreateRoom = async (charId: CharacterId, duration: InGameDuration) => {
+    if (!user) return;
+    soundEngine.playClick();
+    setRoomError(null);
+    setRoomBusy(true);
+    try {
+      const created = await createTurnRoom(user, charId, duration);
+      setLocalDuelRole('player1');
+      setActiveRoom(created);
+      setActiveRoomCode(created.roomCode);
+    } catch (err) {
+      setRoomError(err instanceof Error ? err.message : 'Gagal membuat room.');
+    } finally {
+      setRoomBusy(false);
+    }
+  };
+
+  const handleJoinRoom = async (roomCode: string, charId: CharacterId) => {
+    if (!user) return;
+    soundEngine.playClick();
+    setRoomError(null);
+    setRoomBusy(true);
+    try {
+      const joined = await joinTurnRoom(roomCode, user, charId);
+      setLocalDuelRole('player2');
+      setActiveRoom(joined);
+      setActiveRoomCode(joined.roomCode);
+    } catch (err) {
+      setRoomError(err instanceof Error ? err.message : 'Gagal bergabung ke room.');
+    } finally {
+      setRoomBusy(false);
+    }
+  };
+
+  const handleStartDuelTurn = () => {
+    if (!activeRoom || !user) return;
+    soundEngine.playClick();
+
+    const role: 'player1' | 'player2' =
+      localDuelRole || (user.uid === activeRoom.player2Uid ? 'player2' : 'player1');
+    const turnChar =
+      role === 'player1'
+        ? activeRoom.player1Char
+        : activeRoom.player2Char || selectedCharacter;
+
+    setSelectedCharacter(turnChar);
+    engineRef.current?.setSelectedCharacter(turnChar);
+    setActiveDuelTurn({
+      roomCode: activeRoom.roomCode,
+      role,
+      durationSec: activeRoom.durationSec,
+    });
+    setRoundBoosters({ speedBoost: false, time2xBoost: false });
+    setBombReturnNotice(null);
+    setOverModal('none');
+    setShowMultiplayer(false);
+    setPopups([]);
+    setHud({
+      ...INITIAL_HUD,
+      lives: MAX_PLAYER_LIVES,
+      maxLives: MAX_PLAYER_LIVES,
+      timeLeft: activeRoom.durationSec,
+    });
+    setPhase('playing');
+    engineRef.current?.startGame(turnChar, activeRoom.durationSec, {
+      speedBoost: false,
+      time2xBoost: false,
+    });
+  };
+
+  const handleCancelWaitingRoom = async () => {
+    if (!activeRoom) return;
+    soundEngine.playClick();
+    try {
+      await cancelWaitingRoom(activeRoom.roomCode);
+    } catch (err) {
+      console.error(err);
+    }
+    setActiveRoomCode(null);
+    setActiveRoom(null);
+    setLocalDuelRole(null);
+    setRoomError(null);
+  };
+
+  const handleLeaveRoom = () => {
+    soundEngine.playClick();
+    setActiveRoomCode(null);
+    setActiveRoom(null);
+    setLocalDuelRole(null);
+    setRoomError(null);
+  };
+
   const handleTogglePause = () => {
     soundEngine.playClick();
     if (phase === 'playing') {
@@ -336,6 +630,7 @@ export default function App() {
 
   const handleBackToMenu = () => {
     soundEngine.playClick();
+    setActiveDuelTurn(null);
     setOverModal('none');
     setPopups([]);
     engineRef.current?.returnToMenu();
@@ -365,17 +660,15 @@ export default function App() {
   };
 
   const handleExchangePoints = (tier: ExchangeTier) => {
-    setSaveStore((prev) => {
-      if (prev.totalPoints < tier.pointsCost) return prev;
-      const next: PlayerSaveStore = {
-        ...prev,
-        totalPoints: prev.totalPoints - tier.pointsCost,
-        rupiahBalance: prev.rupiahBalance + tier.rupiahValue,
-        exchangeCount: prev.exchangeCount + 1,
-      };
-      persistSaveStore(next);
-      return next;
-    });
+    const prev = saveStoreRef.current;
+    if (prev.totalPoints < tier.pointsCost) return;
+    const next: PlayerSaveStore = {
+      ...prev,
+      totalPoints: prev.totalPoints - tier.pointsCost,
+      rupiahBalance: prev.rupiahBalance + tier.rupiahValue,
+      exchangeCount: prev.exchangeCount + 1,
+    };
+    saveAndSync(next);
     soundEngine.playExchangeCoin();
   };
 
@@ -404,8 +697,7 @@ export default function App() {
           time2xBoost: item.id === 'boost_time2x' ? true : cur.armedBoosters.time2xBoost,
         },
       };
-      setSaveStore(next);
-      persistSaveStore(next);
+      saveAndSync(next);
       soundEngine.playExchangeCoin();
       return;
     }
@@ -438,8 +730,7 @@ export default function App() {
       equippedByChar: nextEquippedByChar,
       equippedCarpet: nextCarpet,
     };
-    setSaveStore(next);
-    persistSaveStore(next);
+    saveAndSync(next);
     engineRef.current?.applyLoadouts(
       nextEquippedByChar,
       nextCarpet,
@@ -479,8 +770,7 @@ export default function App() {
       equippedByChar: nextEquippedByChar,
       equippedCarpet: nextCarpet,
     };
-    setSaveStore(next);
-    persistSaveStore(next);
+    saveAndSync(next);
     engineRef.current?.applyLoadouts(
       nextEquippedByChar,
       nextCarpet,
@@ -491,24 +781,28 @@ export default function App() {
 
   const handleToggleBoosterArm = (boosterId: 'boost_speed' | 'boost_time2x') => {
     soundEngine.playClick();
-    setSaveStore((prev) => {
-      const next: PlayerSaveStore = {
-        ...prev,
-        armedBoosters: {
-          speedBoost:
-            boosterId === 'boost_speed'
-              ? !prev.armedBoosters.speedBoost && prev.boosterCounts.boost_speed > 0
-              : prev.armedBoosters.speedBoost,
-          time2xBoost:
-            boosterId === 'boost_time2x'
-              ? !prev.armedBoosters.time2xBoost && prev.boosterCounts.boost_time2x > 0
-              : prev.armedBoosters.time2xBoost,
-        },
-      };
-      persistSaveStore(next);
-      return next;
-    });
+    const prev = saveStoreRef.current;
+    const next: PlayerSaveStore = {
+      ...prev,
+      armedBoosters: {
+        speedBoost:
+          boosterId === 'boost_speed'
+            ? !prev.armedBoosters.speedBoost && prev.boosterCounts.boost_speed > 0
+            : prev.armedBoosters.speedBoost,
+        time2xBoost:
+          boosterId === 'boost_time2x'
+            ? !prev.armedBoosters.time2xBoost && prev.boosterCounts.boost_time2x > 0
+            : prev.armedBoosters.time2xBoost,
+      },
+    };
+    saveAndSync(next);
   };
+
+  const duelBadge = activeDuelTurn
+    ? `Duel #${activeDuelTurn.roomCode} · ${
+        activeDuelTurn.role === 'player1' ? 'Giliran P1' : 'Giliran P2'
+      }`
+    : null;
 
   return (
     <main className="relative h-[100dvh] w-screen overflow-hidden bg-[#FFE8EC]">
@@ -525,10 +819,34 @@ export default function App() {
           durationMode={durationMode}
           onSelectDuration={handleSelectDuration}
           saveStore={saveStore}
+          user={user}
+          authBusy={authBusy}
+          cloudSynced={cloudSynced}
+          showMultiplayer={showMultiplayer}
+          activeRoom={activeRoom}
+          localDuelRole={localDuelRole}
+          roomError={roomError}
+          roomBusy={roomBusy}
           muted={muted}
           vibrationEnabled={vibrationEnabled}
           bombReturnNotice={bombReturnNotice}
           onDismissBombNotice={() => setBombReturnNotice(null)}
+          onGoogleLogin={handleGoogleLogin}
+          onGoogleLogout={handleGoogleLogout}
+          onOpenMultiplayer={() => {
+            soundEngine.playClick();
+            setRoomError(null);
+            setShowMultiplayer(true);
+          }}
+          onCloseMultiplayer={() => {
+            soundEngine.playClick();
+            setShowMultiplayer(false);
+          }}
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+          onStartDuelTurn={handleStartDuelTurn}
+          onCancelWaitingRoom={handleCancelWaitingRoom}
+          onLeaveRoom={handleLeaveRoom}
           onToggleMute={handleToggleMute}
           onToggleVibration={handleToggleVibration}
           onExchangePoints={handleExchangePoints}
@@ -547,6 +865,7 @@ export default function App() {
           popups={popups}
           activeBoosters={roundBoosters}
           hazardFlash={hazardFlash}
+          duelBadge={duelBadge}
           muted={muted}
           vibrationEnabled={vibrationEnabled}
           onToggleMute={handleToggleMute}

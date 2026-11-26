@@ -1,0 +1,239 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRoomCode(code) {
+      return code is string && code.size() == 6 && code.matches('^[A-Z0-9]{6}$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidEquipLoadout(eq) {
+      return eq is map
+        && eq.keys().hasAll(['hat', 'glasses', 'shirt', 'bag'])
+        && eq.keys().hasOnly(['hat', 'glasses', 'shirt', 'bag'])
+        && (eq.hat == null || (eq.hat is string && eq.hat.size() <= 40))
+        && (eq.glasses == null || (eq.glasses is string && eq.glasses.size() <= 40))
+        && (eq.shirt == null || (eq.shirt is string && eq.shirt.size() <= 40))
+        && (eq.bag == null || (eq.bag is string && eq.bag.size() <= 40));
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'photoURL',
+          'tataBest', 'duduBest', 'bestCombo',
+          'totalPoints', 'rupiahBalance', 'exchangeCount',
+          'ownedItems', 'equippedByChar', 'equippedCarpet',
+          'boosterCounts', 'armedBoosters',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'photoURL',
+          'tataBest', 'duduBest', 'bestCombo',
+          'totalPoints', 'rupiahBalance', 'exchangeCount',
+          'ownedItems', 'equippedByChar', 'equippedCarpet',
+          'boosterCounts', 'armedBoosters',
+          'createdAt', 'updatedAt'
+        ])
+        && data.uid == userId
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40
+        && data.photoURL is string && data.photoURL.size() <= 512
+        && data.tataBest is int && data.tataBest >= 0 && data.tataBest <= 10000000
+        && data.duduBest is int && data.duduBest >= 0 && data.duduBest <= 10000000
+        && data.bestCombo is int && data.bestCombo >= 0 && data.bestCombo <= 10000
+        && data.totalPoints is int && data.totalPoints >= 0 && data.totalPoints <= 100000000
+        && data.rupiahBalance is int && data.rupiahBalance >= 0 && data.rupiahBalance <= 1000000000
+        && data.exchangeCount is int && data.exchangeCount >= 0 && data.exchangeCount <= 100000
+        && data.ownedItems is list && data.ownedItems.size() <= 50
+        && (data.ownedItems.size() == 0 || data.ownedItems[0] is string)
+        && data.equippedByChar is map
+        && data.equippedByChar.keys().hasAll(['dudu', 'tata'])
+        && data.equippedByChar.keys().hasOnly(['dudu', 'tata'])
+        && isValidEquipLoadout(data.equippedByChar.dudu)
+        && isValidEquipLoadout(data.equippedByChar.tata)
+        && data.equippedCarpet is string && data.equippedCarpet.size() >= 1 && data.equippedCarpet.size() <= 40
+        && data.boosterCounts is map
+        && data.boosterCounts.keys().hasAll(['boost_speed', 'boost_time2x'])
+        && data.boosterCounts.keys().hasOnly(['boost_speed', 'boost_time2x'])
+        && data.boosterCounts.boost_speed is int && data.boosterCounts.boost_speed >= 0 && data.boosterCounts.boost_speed <= 999
+        && data.boosterCounts.boost_time2x is int && data.boosterCounts.boost_time2x >= 0 && data.boosterCounts.boost_time2x <= 999
+        && data.armedBoosters is map
+        && data.armedBoosters.keys().hasAll(['speedBoost', 'time2xBoost'])
+        && data.armedBoosters.keys().hasOnly(['speedBoost', 'time2xBoost'])
+        && data.armedBoosters.speedBoost is bool
+        && data.armedBoosters.time2xBoost is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTurnResult(res) {
+      return res is map
+        && res.keys().hasAll(['score', 'maxCombo', 'itemsCaught', 'hazardsHit', 'livesLeft', 'durationUsed'])
+        && res.keys().hasOnly(['score', 'maxCombo', 'itemsCaught', 'hazardsHit', 'livesLeft', 'durationUsed'])
+        && res.score is int && res.score >= 0 && res.score <= 10000000
+        && res.maxCombo is int && res.maxCombo >= 0 && res.maxCombo <= 10000
+        && res.itemsCaught is int && res.itemsCaught >= 0 && res.itemsCaught <= 10000
+        && res.hazardsHit is int && res.hazardsHit >= 0 && res.hazardsHit <= 10
+        && res.livesLeft is int && res.livesLeft >= 0 && res.livesLeft <= 3
+        && res.durationUsed is int && res.durationUsed >= 0 && res.durationUsed <= 300;
+    }
+
+    function isValidTurnRoom(data, roomCode) {
+      return data.keys().hasAll([
+          'roomCode', 'durationSec', 'status',
+          'player1Uid', 'player1Name', 'player1Char',
+          'player2Uid', 'player2Name', 'player2Char',
+          'player1Result', 'player2Result', 'winnerUid',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'roomCode', 'durationSec', 'status',
+          'player1Uid', 'player1Name', 'player1Char',
+          'player2Uid', 'player2Name', 'player2Char',
+          'player1Result', 'player2Result', 'winnerUid',
+          'createdAt', 'updatedAt'
+        ])
+        && data.roomCode == roomCode
+        && isValidRoomCode(data.roomCode)
+        && data.durationSec is int && data.durationSec in [45, 60, 90]
+        && data.status in ['waiting', 'player1_turn', 'player2_turn', 'finished']
+        && isValidId(data.player1Uid)
+        && data.player1Name is string && data.player1Name.size() >= 1 && data.player1Name.size() <= 40
+        && data.player1Char in ['dudu', 'tata']
+        && (data.player2Uid == null || (data.player2Uid is string && isValidId(data.player2Uid)))
+        && (data.player2Name == null || (data.player2Name is string && data.player2Name.size() >= 1 && data.player2Name.size() <= 40))
+        && (data.player2Char == null || data.player2Char in ['dudu', 'tata'])
+        && (data.player1Result == null || isValidTurnResult(data.player1Result))
+        && (data.player2Result == null || isValidTurnResult(data.player2Result))
+        && (data.winnerUid == null || (data.winnerUid is string && data.winnerUid.size() >= 1 && data.winnerUid.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoURL',
+          'tataBest', 'duduBest', 'bestCombo',
+          'totalPoints', 'rupiahBalance', 'exchangeCount',
+          'ownedItems', 'equippedByChar', 'equippedCarpet',
+          'boosterCounts', 'armedBoosters', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /rooms/{roomCode} {
+      allow get: if isValidRoomCode(roomCode) && isVerifiedUser();
+      allow list: if false;
+      allow create: if isValidRoomCode(roomCode)
+        && isVerifiedUser()
+        && isValidTurnRoom(incoming(), roomCode)
+        && incoming().player1Uid == request.auth.uid
+        && incoming().status == 'waiting'
+        && incoming().player2Uid == null
+        && incoming().player2Name == null
+        && incoming().player2Char == null
+        && incoming().player1Result == null
+        && incoming().player2Result == null
+        && incoming().winnerUid == null
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidRoomCode(roomCode)
+        && isVerifiedUser()
+        && isValidTurnRoom(incoming(), roomCode)
+        && existing().status != 'finished'
+        && incoming().roomCode == existing().roomCode
+        && incoming().durationSec == existing().durationSec
+        && incoming().player1Uid == existing().player1Uid
+        && incoming().player1Name == existing().player1Name
+        && incoming().player1Char == existing().player1Char
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Player 2 joins waiting room -> advances to player1_turn
+          (
+            existing().status == 'waiting'
+            && existing().player2Uid == null
+            && incoming().status == 'player1_turn'
+            && incoming().player2Uid == request.auth.uid
+            && incoming().player2Name != null
+            && incoming().player2Char != null
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'player2Uid', 'player2Name', 'player2Char', 'status', 'updatedAt'
+            ])
+          )
+          ||
+          // Action 2: Player 1 submits turn result -> advances to player2_turn
+          (
+            existing().status == 'player1_turn'
+            && request.auth.uid == existing().player1Uid
+            && incoming().status == 'player2_turn'
+            && incoming().player1Result != null
+            && incoming().player2Result == null
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'player1Result', 'status', 'updatedAt'
+            ])
+          )
+          ||
+          // Action 3: Player 2 submits turn result -> advances to finished with winner
+          (
+            existing().status == 'player2_turn'
+            && request.auth.uid == existing().player2Uid
+            && incoming().status == 'finished'
+            && incoming().player2Result != null
+            && (
+              incoming().winnerUid == 'draw'
+              || incoming().winnerUid == existing().player1Uid
+              || incoming().winnerUid == existing().player2Uid
+            )
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'player2Result', 'winnerUid', 'status', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidRoomCode(roomCode)
+        && isVerifiedUser()
+        && existing().player1Uid == request.auth.uid
+        && existing().status == 'waiting';
+    }
+  }
+}

@@ -11,6 +11,7 @@ import {
   Play,
   RotateCcw,
   Smartphone,
+  Swords,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ interface GameHUDProps {
   popups: FloatingPopup[];
   activeBoosters: ActiveBoosters;
   hazardFlash: boolean;
+  duelBadge?: string | null;
   muted: boolean;
   vibrationEnabled: boolean;
   onToggleMute: () => void;
@@ -48,6 +50,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   popups,
   activeBoosters,
   hazardFlash,
+  duelBadge,
   muted,
   vibrationEnabled,
   onToggleMute,
@@ -170,6 +173,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </div>
             </div>
 
+            {duelBadge && (
+              <div className="card-25d flex items-center gap-1.5 rounded-xl bg-[#FFE3EC] px-3 py-1">
+                <Swords className="h-3.5 w-3.5 text-[#D94F70]" strokeWidth={2.75} />
+                <span className="font-display text-xs font-bold text-[#432B1D] whitespace-nowrap">
+                  {duelBadge}
+                </span>
+              </div>
+            )}
+
             {(hud.combo > 0 || hud.feverActive) && (
               <div className="card-25d flex items-center gap-2 rounded-xl bg-[#FFFBF7] px-3 py-1">
                 <Flame
@@ -264,14 +276,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 <Smartphone className="h-4.5 w-4.5" strokeWidth={2.5} />
                 {vibrationEnabled ? 'Getaran: Aktif' : 'Getaran: Mati'}
               </button>
-              <button
-                type="button"
-                onClick={onRestart}
-                className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FFF2DF] py-2.5 font-display text-sm font-bold text-[#432B1D]"
-              >
-                <RotateCcw className="h-4.5 w-4.5" strokeWidth={2.5} />
-                Ulangi Dari Awal
-              </button>
+              {!duelBadge && (
+                <button
+                  type="button"
+                  onClick={onRestart}
+                  className="btn-25d flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FFF2DF] py-2.5 font-display text-sm font-bold text-[#432B1D]"
+                >
+                  <RotateCcw className="h-4.5 w-4.5" strokeWidth={2.5} />
+                  Ulangi Dari Awal
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onBackToMenu}
