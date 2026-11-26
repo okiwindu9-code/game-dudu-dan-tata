@@ -12,6 +12,7 @@ import {
   GamePhase,
   HudSnapshot,
   InGameDuration,
+  MAX_PLAYER_LIVES,
   TIME_MODES,
 } from '../types/game';
 import {
@@ -44,6 +45,7 @@ export interface EngineCallbacks {
   onHudUpdate: (hud: HudSnapshot) => void;
   onPopup: (popup: FloatingPopup) => void;
   onGameOver: (finalHud: HudSnapshot) => void;
+  onLivesDepleted?: (finalHud: HudSnapshot) => void;
   onHazardHit?: () => void;
 }
 
@@ -112,6 +114,7 @@ export class GameEngine {
   private spawnTimer = 0;
   private score = 0;
   private timeLeft = 60;
+  private lives = MAX_PLAYER_LIVES;
   private combo = 0;
   private maxCombo = 0;
   private feverStreak = 0;
@@ -226,6 +229,13 @@ export class GameEngine {
     this.keys.delete(e.code);
   };
 
+  private getLaneHalfWidth(): number {
+    const aspect = this.camera.aspect || 1;
+    if (aspect < 0.72) return 4.15;
+    if (aspect < 1.0) return 4.9;
+    return 6.85;
+  }
+
   private updatePointerWorldX(clientX: number, clientY: number) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -237,7 +247,8 @@ export class GameEngine {
     if (Math.abs(_rayDir.z) < 0.001) return;
     const t = (0 - this.camera.position.z) / _rayDir.z;
     const worldX = this.camera.position.x + _rayDir.x * t;
-    this.pointerTargetX = THREE.MathUtils.clamp(worldX, -6.9, 6.9);
+    const laneHalf = this.getLaneHalfWidth();
+    this.pointerTargetX = THREE.MathUtils.clamp(worldX, -laneHalf, laneHalf);
   }
 
   private handlePointerDown = (e: PointerEvent) => {
@@ -327,6 +338,7 @@ export class GameEngine {
 
     const cfg = TIME_MODES[durationMode];
     this.score = 0;
+    this.lives = MAX_PLAYER_LIVES;
     this.timeLeft = activeBoosters.time2xBoost
       ? cfg.durationSec * 2
       : cfg.durationSec;
@@ -434,7 +446,8 @@ export class GameEngine {
     const info = COLLECTIBLE_INFO[type];
     const shadow = this.collectibleFactory.createShadowMarker(info.isHazard);
 
-    const x = THREE.MathUtils.randFloat(-6.7, 6.7);
+    const spawnHalf = Math.max(2.8, this.getLaneHalfWidth() - 0.25);
+    const x = THREE.MathUtils.randFloat(-spawnHalf, spawnHalf);
     const y = 10.6;
     mesh.position.set(x, y, 0);
     shadow.position.set(x, 0.02, 0);
@@ -500,6 +513,8 @@ export class GameEngine {
     return {
       score: this.score,
       timeLeft: Math.max(0, Math.ceil(this.timeLeft)),
+      lives: this.lives,
+      maxLives: MAX_PLAYER_LIVES,
       combo: this.combo,
       maxCombo: this.maxCombo,
       multiplier: this.getMultiplier(),
@@ -559,12 +574,20 @@ export class GameEngine {
       isSpotlight: !isTata,
     });
 
-    // Camera frames both characters cleanly above the bottom character selection cards
+    // Adaptive portrait/landscape camera framing so both characters sit cleanly in center stage
+    const aspect = Math.max(0.42, this.camera.aspect || 1);
+    const isPortrait = aspect < 1.0;
+    const menuCamZ = isPortrait
+      ? THREE.MathUtils.clamp(7.7 / aspect, 10.2, 16.8)
+      : 8.9;
+    const menuCamY = isPortrait ? 2.65 : 2.55;
+    const menuLookY = isPortrait ? 0.65 : 0.85;
+
     this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, 0, 6, dt);
-    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, 2.55, 6, dt);
-    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, 8.9, 6, dt);
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, menuCamY, 6, dt);
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, menuCamZ, 6, dt);
     this.camLookAt.x = THREE.MathUtils.damp(this.camLookAt.x, 0, 6, dt);
-    this.camLookAt.y = THREE.MathUtils.damp(this.camLookAt.y, 0.85, 6, dt);
+    this.camLookAt.y = THREE.MathUtils.damp(this.camLookAt.y, menuLookY, 6, dt);
     this.camLookAt.z = THREE.MathUtils.damp(this.camLookAt.z, 0.3, 6, dt);
     this.camera.lookAt(this.camLookAt);
   }
@@ -632,8 +655,9 @@ export class GameEngine {
       this.playerVx = THREE.MathUtils.damp(this.playerVx, 0, 14, dt);
     }
 
-    this.playerX = THREE.MathUtils.clamp(this.playerX + this.playerVx * dt, -6.9, 6.9);
-    if (Math.abs(this.playerX) >= 6.89) {
+    const laneHalf = this.getLaneHalfWidth();
+    this.playerX = THREE.MathUtils.clamp(this.playerX + this.playerVx * dt, -laneHalf, laneHalf);
+    if (Math.abs(this.playerX) >= laneHalf - 0.01) {
       this.playerVx = 0;
     }
 
@@ -720,7 +744,7 @@ export class GameEngine {
 
       item.y -= item.vy * dt;
       const swayX = Math.sin(this.elapsed * 2.5 + item.swayPhase) * item.swayAmp * dt;
-      item.x = THREE.MathUtils.clamp(item.x + swayX, -6.9, 6.9);
+      item.x = THREE.MathUtils.clamp(item.x + swayX, -laneHalf, laneHalf);
 
       item.mesh.position.set(item.x, item.y, 0);
       item.mesh.rotation.y += item.rotSpeedY * dt;
@@ -738,7 +762,10 @@ export class GameEngine {
       const hitY = item.y >= playerBottom && item.y <= playerTop;
 
       if (hitX && hitY) {
-        this.handleCatch(item);
+        const roundEnded = this.handleCatch(item);
+        if (roundEnded) {
+          return;
+        }
         this.scene.remove(item.mesh);
         this.scene.remove(item.shadow);
         (item.shadow.material as THREE.Material).dispose();
@@ -761,30 +788,39 @@ export class GameEngine {
       }
     }
 
-    // Subtle camera follow & shake decay
+    // Subtle camera follow & shake decay (responsive for Android portrait & PC landscape)
     this.cameraShake = Math.max(0, this.cameraShake - dt * 2.8);
     const shakeX = (Math.random() - 0.5) * this.cameraShake * 0.35;
     const shakeY = (Math.random() - 0.5) * this.cameraShake * 0.35;
 
-    const targetCamX = this.playerX * 0.22;
-    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, targetCamX, 5, dt) + shakeX;
-    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, 4.7, 5, dt) + shakeY;
-    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, 14.8, 5, dt);
+    const aspect = Math.max(0.42, this.camera.aspect || 1);
+    const isPortrait = aspect < 1.0;
+    const playCamZ = isPortrait
+      ? THREE.MathUtils.clamp(11.6 / aspect, 15.6, 22.8)
+      : 14.8;
+    const playCamY = isPortrait ? 5.1 : 4.7;
+    const followWeight = isPortrait ? 0.45 : 0.22;
 
-    this.camLookAt.x = THREE.MathUtils.damp(this.camLookAt.x, targetCamX * 0.5, 6, dt);
-    this.camLookAt.y = THREE.MathUtils.damp(this.camLookAt.y, 2.45, 6, dt);
+    const targetCamX = this.playerX * followWeight;
+    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, targetCamX, 5, dt) + shakeX;
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, playCamY, 5, dt) + shakeY;
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, playCamZ, 5, dt);
+
+    this.camLookAt.x = THREE.MathUtils.damp(this.camLookAt.x, targetCamX * 0.65, 6, dt);
+    this.camLookAt.y = THREE.MathUtils.damp(this.camLookAt.y, isPortrait ? 2.85 : 2.45, 6, dt);
     this.camLookAt.z = THREE.MathUtils.damp(this.camLookAt.z, 0, 6, dt);
     this.camera.lookAt(this.camLookAt);
 
     this.pushHud(false);
   }
 
-  private handleCatch(item: FallingItem) {
+  private handleCatch(item: FallingItem): boolean {
     const info = COLLECTIBLE_INFO[item.type];
     const rig = this.getActiveRig();
 
     if (info.isHazard) {
       this.score = Math.max(0, this.score + info.points);
+      this.lives = Math.max(0, this.lives - 1);
       this.combo = 0;
       this.feverStreak = 0;
       this.feverActive = false;
@@ -795,11 +831,18 @@ export class GameEngine {
       rig.dizzyTimer = 0.7;
       triggerSquash(rig, -4.5);
       this.particles.burst(item.x, item.y, 0.2, info.color, 18, true);
-      this.emitPopup(item.x, item.y + 0.8, `${info.points} Aduh!`, 'hazard');
+      this.emitPopup(item.x, item.y + 0.8, `-1 Nyawa!`, 'hazard');
       soundEngine.playHazard();
       this.callbacks.onHazardHit?.();
       this.pushHud(true);
-      return;
+
+      if (this.lives <= 0) {
+        const finalSnap = this.buildHudSnapshot();
+        this.returnToMenu();
+        this.callbacks.onLivesDepleted?.(finalSnap);
+        return true;
+      }
+      return false;
     }
 
     this.itemsCaught += 1;
@@ -843,6 +886,7 @@ export class GameEngine {
     triggerSquash(rig, 2.6);
     this.particles.burst(item.x, item.y, 0.2, info.color, info.isRare ? 18 : 12, false);
     this.pushHud(true);
+    return false;
   }
 
   private afterDraw(cb: () => void) {

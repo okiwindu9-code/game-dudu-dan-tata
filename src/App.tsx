@@ -8,6 +8,7 @@ import { ShopModal } from './components/ShopModal';
 import { GameEngine } from './three/GameEngine';
 import {
   ActiveBoosters,
+  BagId,
   CarpetId,
   CharacterId,
   EquippedLoadout,
@@ -18,6 +19,7 @@ import {
   HatId,
   HudSnapshot,
   InGameDuration,
+  MAX_PLAYER_LIVES,
   PlayerSaveStore,
   ShirtId,
   ShopItem,
@@ -31,6 +33,7 @@ const DEFAULT_LOADOUT: EquippedLoadout = {
   hat: null,
   glasses: null,
   shirt: null,
+  bag: null,
 };
 
 function createDefaultSaveStore(): PlayerSaveStore {
@@ -78,11 +81,13 @@ function loadSaveStore(): PlayerSaveStore {
             hat: p.equippedByChar?.dudu?.hat ?? null,
             glasses: p.equippedByChar?.dudu?.glasses ?? null,
             shirt: p.equippedByChar?.dudu?.shirt ?? null,
+            bag: p.equippedByChar?.dudu?.bag ?? null,
           },
           tata: {
             hat: p.equippedByChar?.tata?.hat ?? null,
             glasses: p.equippedByChar?.tata?.glasses ?? null,
             shirt: p.equippedByChar?.tata?.shirt ?? null,
+            bag: p.equippedByChar?.tata?.bag ?? null,
           },
         },
         equippedCarpet: p.equippedCarpet ?? 'default',
@@ -113,6 +118,8 @@ function persistSaveStore(store: PlayerSaveStore) {
 const INITIAL_HUD: HudSnapshot = {
   score: 0,
   timeLeft: TIME_MODES[60].durationSec,
+  lives: MAX_PLAYER_LIVES,
+  maxLives: MAX_PLAYER_LIVES,
   combo: 0,
   maxCombo: 0,
   multiplier: 1,
@@ -133,6 +140,7 @@ export default function App() {
   const [hud, setHud] = useState<HudSnapshot>(INITIAL_HUD);
   const [popups, setPopups] = useState<FloatingPopup[]>([]);
   const [hazardFlash, setHazardFlash] = useState(false);
+  const [bombReturnNotice, setBombReturnNotice] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
   const [saveStore, setSaveStore] = useState<PlayerSaveStore>(loadSaveStore);
@@ -191,6 +199,32 @@ export default function App() {
     setPhase('gameover');
   }, []);
 
+  const handleLivesDepleted = useCallback((finalHud: HudSnapshot) => {
+    const charId = selectedCharRef.current;
+    const current = saveStoreRef.current;
+
+    const updated: PlayerSaveStore = {
+      ...current,
+      tataBest:
+        charId === 'tata' ? Math.max(current.tataBest, finalHud.score) : current.tataBest,
+      duduBest:
+        charId === 'dudu' ? Math.max(current.duduBest, finalHud.score) : current.duduBest,
+      bestCombo: Math.max(current.bestCombo, finalHud.maxCombo),
+      totalPoints: current.totalPoints + finalHud.score,
+    };
+
+    setSaveStore(updated);
+    persistSaveStore(updated);
+    setPopups([]);
+    setOverModal('none');
+    setBombReturnNotice(
+      finalHud.score > 0
+        ? `Nyawa habis terkena bom! +${finalHud.score} poin tetap masuk celengan.`
+        : 'Nyawa habis terkena 3 bom! Hati-hati hindari bom hitam ya.',
+    );
+    setPhase('menu');
+  }, []);
+
   useEffect(() => {
     const container = canvasMountRef.current;
     if (!container) return;
@@ -199,11 +233,12 @@ export default function App() {
       onHudUpdate: (snapshot) => setHud(snapshot),
       onPopup: handlePopup,
       onGameOver: handleGameOver,
+      onLivesDepleted: handleLivesDepleted,
       onHazardHit: handleHazardHit,
     });
     engineRef.current = engine;
 
-    // Apply saved 3D hats, glasses, shirts & patterned carpet immediately
+    // Apply saved 3D hats, glasses, shirts, bags & patterned carpet immediately
     const initialStore = saveStoreRef.current;
     engine.applyLoadouts(initialStore.equippedByChar, initialStore.equippedCarpet);
 
@@ -212,7 +247,7 @@ export default function App() {
       engine.dispose();
       engineRef.current = null;
     };
-  }, [handleGameOver, handleHazardHit, handlePopup]);
+  }, [handleGameOver, handleHazardHit, handleLivesDepleted, handlePopup]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -274,11 +309,14 @@ export default function App() {
     }
 
     setRoundBoosters(active);
+    setBombReturnNotice(null);
     setOverModal('none');
     setPopups([]);
     const baseSec = TIME_MODES[durationMode].durationSec;
     setHud({
       ...INITIAL_HUD,
+      lives: MAX_PLAYER_LIVES,
+      maxLives: MAX_PLAYER_LIVES,
       timeLeft: active.time2xBoost ? baseSec * 2 : baseSec,
     });
     setPhase('playing');
@@ -387,6 +425,8 @@ export default function App() {
       nextEquippedByChar[selectedCharacter].glasses = item.id as GlassesId;
     } else if (item.category === 'shirt') {
       nextEquippedByChar[selectedCharacter].shirt = item.id as ShirtId;
+    } else if (item.category === 'bag') {
+      nextEquippedByChar[selectedCharacter].bag = item.id as BagId;
     } else if (item.category === 'carpet') {
       nextCarpet = item.id as CarpetId;
     }
@@ -427,6 +467,9 @@ export default function App() {
     } else if (item.category === 'shirt') {
       nextEquippedByChar[charId].shirt =
         nextEquippedByChar[charId].shirt === item.id ? null : (item.id as ShirtId);
+    } else if (item.category === 'bag') {
+      nextEquippedByChar[charId].bag =
+        nextEquippedByChar[charId].bag === item.id ? null : (item.id as BagId);
     } else if (item.category === 'carpet') {
       nextCarpet = nextCarpet === item.id ? 'default' : (item.id as CarpetId);
     }
@@ -468,7 +511,7 @@ export default function App() {
   };
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#FFE8EC]">
+    <main className="relative h-[100dvh] w-screen overflow-hidden bg-[#FFE8EC]">
       <div
         ref={canvasMountRef}
         className="absolute inset-0 h-full w-full"
@@ -484,6 +527,8 @@ export default function App() {
           saveStore={saveStore}
           muted={muted}
           vibrationEnabled={vibrationEnabled}
+          bombReturnNotice={bombReturnNotice}
+          onDismissBombNotice={() => setBombReturnNotice(null)}
           onToggleMute={handleToggleMute}
           onToggleVibration={handleToggleVibration}
           onExchangePoints={handleExchangePoints}

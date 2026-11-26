@@ -12,7 +12,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ onClose }) => {
         <div className="flex items-center justify-between border-b-2 border-[#432B1D]/15 bg-[#FFF0F3] px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#432B1D] bg-[#F26B7A] text-white">
-              <BookOpen className="h-5 w-5" />
+              <BookOpen className="h-5 w-5" strokeWidth={2.5} />
             </div>
             <div>
               <h2 className="font-display text-xl font-bold leading-tight text-[#432B1D]">
@@ -29,7 +29,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ onClose }) => {
             className="btn-25d flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#432B1D]"
             aria-label="Tutup panduan"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" strokeWidth={2.5} />
           </button>
         </div>
 
@@ -66,7 +66,7 @@ export const GuideModal: React.FC<GuideModalProps> = ({ onClose }) => {
               </div>
               <div className="rounded-xl border border-[#432B1D]/20 bg-[#FFE3E3] px-3 py-2">
                 <div className="font-bold text-[#C92A3E]">Bom Gosong</div>
-                <div className="font-mono-num text-[#C92A3E]">-15 poin &amp; reset kombo</div>
+                <div className="font-mono-num text-[#C92A3E]">-1 Nyawa (3x → Menu)</div>
               </div>
             </div>
           </div>

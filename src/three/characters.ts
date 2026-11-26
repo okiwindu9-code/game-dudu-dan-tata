@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  BagId,
   CharacterId,
   EquippedLoadout,
   GlassesId,
@@ -31,6 +32,7 @@ export interface CharacterRig {
   hatSlot: THREE.Group;
   glassesSlot: THREE.Group;
   shirtSlot: THREE.Group;
+  bagSlot: THREE.Group;
   // Animation state
   squashY: number;
   squashVel: number;
@@ -304,6 +306,10 @@ export function createCharacter(id: CharacterId): CharacterRig {
   shirtSlot.position.set(0, 0.64, 0);
   bodyPivot.add(shirtSlot);
 
+  const bagSlot = new THREE.Group();
+  bagSlot.position.set(0, 0.64, 0);
+  bodyPivot.add(bagSlot);
+
   return {
     id,
     root,
@@ -322,6 +328,7 @@ export function createCharacter(id: CharacterId): CharacterRig {
     hatSlot,
     glassesSlot,
     shirtSlot,
+    bagSlot,
     squashY: 1,
     squashVel: 0,
     blinkTimer: 1.5 + Math.random() * 2.5,
@@ -516,10 +523,121 @@ function buildShirtMesh(shirtId: ShirtId): THREE.Group {
   return g;
 }
 
+function buildBagMesh(bagId: BagId): THREE.Group {
+  const g = new THREE.Group();
+
+  if (bagId === 'bag_boba') {
+    // Diagonal crossbody strap across torso
+    const strapGeo = new THREE.TorusGeometry(0.56, 0.032, 8, 28);
+    strapGeo.scale(1.06, 0.85, 0.92);
+    const strap = createOutlinedPart(strapGeo, createCelMaterial(0xff8fab), 0.016);
+    strap.position.set(0.03, 0.08, 0.02);
+    strap.rotation.z = -0.62;
+    strap.rotation.y = 0.35;
+    g.add(strap);
+
+    // Cute boba cup sling pouch on hip (clearly visible from front)
+    const pouch = new THREE.Group();
+    pouch.position.set(0.58, -0.14, 0.16);
+    pouch.rotation.z = -0.14;
+
+    const cupGeo = new THREE.CylinderGeometry(0.15, 0.11, 0.28, 16);
+    const cup = createOutlinedPart(cupGeo, createCelMaterial(0xf7d294), 0.03);
+    pouch.add(cup);
+
+    const lidGeo = new THREE.CylinderGeometry(0.165, 0.165, 0.045, 16);
+    const lid = createOutlinedPart(lidGeo, createCelMaterial(0xff6b8b), 0.025);
+    lid.position.y = 0.15;
+    pouch.add(lid);
+
+    const strawGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.16, 10);
+    const straw = createOutlinedPart(strawGeo, createCelMaterial(0xffffff), 0.016);
+    straw.position.set(0.03, 0.24, 0);
+    straw.rotation.z = -0.18;
+    pouch.add(straw);
+
+    g.add(pouch);
+  } else if (bagId === 'bag_strawberry') {
+    // Cute front shoulder straps + plush strawberry backpack peeking on back & sides
+    const strapMat = createCelMaterial(0x6bd47f);
+    const strapGeo = new THREE.TorusGeometry(0.24, 0.032, 8, 20);
+    strapGeo.scale(0.65, 1.32, 1.15);
+
+    const strapL = createOutlinedPart(strapGeo, strapMat, 0.016);
+    strapL.position.set(-0.34, 0.12, 0.03);
+    strapL.rotation.y = Math.PI / 2;
+
+    const strapR = createOutlinedPart(strapGeo, strapMat, 0.016);
+    strapR.position.set(0.34, 0.12, 0.03);
+    strapR.rotation.y = Math.PI / 2;
+    g.add(strapL, strapR);
+
+    // Red backpack body
+    const packGeo = new THREE.SphereGeometry(0.42, 20, 16);
+    packGeo.scale(1.04, 1.08, 0.72);
+    const pack = createOutlinedPart(packGeo, createCelMaterial(0xff5e78), 0.04);
+    pack.position.set(0, 0.06, -0.44);
+    g.add(pack);
+
+    // Green strawberry leaf topper peeking from behind shoulders
+    const leafMat = createCelMaterial(0x6bd47f);
+    const leafGeo = new THREE.SphereGeometry(0.14, 10, 8);
+    leafGeo.scale(1.35, 0.45, 0.85);
+    for (let i = -1; i <= 1; i++) {
+      const leaf = createOutlinedPart(leafGeo, leafMat, 0.022);
+      leaf.position.set(i * 0.15, 0.48, -0.34);
+      leaf.rotation.z = -i * 0.25;
+      g.add(leaf);
+    }
+  } else if (bagId === 'bag_star') {
+    // Diagonal warm honey strap
+    const strapGeo = new THREE.TorusGeometry(0.56, 0.032, 8, 28);
+    strapGeo.scale(1.06, 0.85, 0.92);
+    const strap = createOutlinedPart(strapGeo, createCelMaterial(0x8a5a3b), 0.016);
+    strap.position.set(-0.03, 0.08, 0.02);
+    strap.rotation.z = 0.62;
+    strap.rotation.y = -0.35;
+    g.add(strap);
+
+    // Golden star pouch on left hip
+    const pouch = new THREE.Group();
+    pouch.position.set(-0.58, -0.14, 0.16);
+    pouch.rotation.z = 0.14;
+
+    const starMat = createCelMaterial(0xffd166);
+    const coreGeo = new THREE.SphereGeometry(0.17, 14, 12);
+    coreGeo.scale(1.05, 1.0, 0.65);
+    const core = createOutlinedPart(coreGeo, starMat, 0.03);
+    pouch.add(core);
+
+    const pointGeo = new THREE.ConeGeometry(0.08, 0.16, 8);
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2 + Math.PI / 2;
+      const tip = createOutlinedPart(pointGeo, starMat, 0.02);
+      tip.position.set(Math.cos(angle) * 0.14, Math.sin(angle) * 0.14, 0);
+      tip.rotation.z = angle - Math.PI / 2;
+      pouch.add(tip);
+    }
+
+    const gem = createOutlinedPart(
+      new THREE.SphereGeometry(0.055, 10, 10),
+      createCelMaterial(0xfff8d6),
+      0.016,
+    );
+    gem.position.set(0, 0, 0.11);
+    pouch.add(gem);
+
+    g.add(pouch);
+  }
+
+  return g;
+}
+
 export function applyCharacterLoadout(rig: CharacterRig, loadout: EquippedLoadout) {
   clearSlot(rig.hatSlot);
   clearSlot(rig.glassesSlot);
   clearSlot(rig.shirtSlot);
+  clearSlot(rig.bagSlot);
 
   if (loadout.hat) {
     rig.hatSlot.add(buildHatMesh(loadout.hat));
@@ -529,6 +647,9 @@ export function applyCharacterLoadout(rig: CharacterRig, loadout: EquippedLoadou
   }
   if (loadout.shirt) {
     rig.shirtSlot.add(buildShirtMesh(loadout.shirt));
+  }
+  if (loadout.bag) {
+    rig.bagSlot.add(buildBagMesh(loadout.bag));
   }
 }
 

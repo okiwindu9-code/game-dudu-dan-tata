@@ -16,10 +16,11 @@ export type CollectibleType =
 export type HatId = 'hat_straw' | 'hat_strawberry' | 'hat_crown';
 export type GlassesId = 'glasses_cool' | 'glasses_round';
 export type ShirtId = 'shirt_pink' | 'shirt_mint' | 'shirt_butter';
+export type BagId = 'bag_boba' | 'bag_strawberry' | 'bag_star';
 export type CarpetId = 'default' | 'carpet_checker' | 'carpet_polka' | 'carpet_stars';
 export type BoosterId = 'boost_speed' | 'boost_time2x';
 
-export type ShopCategory = 'hat' | 'glasses' | 'shirt' | 'carpet' | 'booster';
+export type ShopCategory = 'hat' | 'glasses' | 'shirt' | 'bag' | 'carpet' | 'booster';
 
 export interface ShopItem {
   id: string;
@@ -107,6 +108,35 @@ export const SHOP_ITEMS: ShopItem[] = [
     swatchColor: '#FFE082',
   },
 
+  // Tas (Baru!)
+  {
+    id: 'bag_boba',
+    name: 'Tas Boba Selempang',
+    category: 'bag',
+    priceRupiah: 65000,
+    description: 'Tas selempang lucu berbentuk gelas boba karamel',
+    swatchColor: '#F7D294',
+    accentColor: '#FF6B8B',
+  },
+  {
+    id: 'bag_strawberry',
+    name: 'Tas Ransel Stroberi',
+    category: 'bag',
+    priceRupiah: 75000,
+    description: 'Ransel merah mungil dengan aksen daun hijau',
+    swatchColor: '#FF5E78',
+    accentColor: '#6BD47F',
+  },
+  {
+    id: 'bag_star',
+    name: 'Tas Bintang Madu',
+    category: 'bag',
+    priceRupiah: 85000,
+    description: 'Tas bahu kuning bintang yang berkilau cerah',
+    swatchColor: '#FFD166',
+    accentColor: '#FFF8D6',
+  },
+
   // Karpet Pola (Stage Floor)
   {
     id: 'carpet_checker',
@@ -161,6 +191,7 @@ export interface EquippedLoadout {
   hat: HatId | null;
   glasses: GlassesId | null;
   shirt: ShirtId | null;
+  bag: BagId | null;
 }
 
 export interface ActiveBoosters {
@@ -186,7 +217,7 @@ export const CHARACTERS: Record<CharacterId, CharacterProfile> = {
     name: 'Dudu',
     title: 'Panda Manis',
     traitTitle: 'Pelukan Magnet',
-    traitDetail: 'Jangkauan tangkap 18% lebih lebar & nyaman',
+    traitDetail: 'Jangkauan tangkap 18% lebih lebar',
     accentColor: '#F26B7A',
     softBg: '#FFF0F3',
     moveSpeed: 10.8,
@@ -197,7 +228,7 @@ export const CHARACTERS: Record<CharacterId, CharacterProfile> = {
     name: 'Tata',
     title: 'Beruang Karamel',
     traitTitle: 'Langkah Lincah',
-    traitDetail: 'Berlari 15% lebih cepat mengejar buah jauh',
+    traitDetail: 'Berlari 15% lebih cepat',
     accentColor: '#C4936E',
     softBg: '#FFF4E6',
     moveSpeed: 12.4,
@@ -219,7 +250,7 @@ export const TIME_MODES: Record<InGameDuration, TimeModeConfig> = {
   45: {
     durationSec: 45,
     label: '45 Detik',
-    subtitle: 'Cepat & Seru',
+    subtitle: 'Cepat',
     spawnInterval: 0.43,
     fallSpeedMin: 5.0,
     fallSpeedMax: 7.4,
@@ -292,9 +323,13 @@ export interface FloatingPopup {
   variant: 'points' | 'bonus' | 'time' | 'fever' | 'hazard';
 }
 
+export const MAX_PLAYER_LIVES = 3;
+
 export interface HudSnapshot {
   score: number;
   timeLeft: number;
+  lives: number;
+  maxLives: number;
   combo: number;
   maxCombo: number;
   multiplier: number;

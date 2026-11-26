@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Backpack,
   Check,
   Clock,
   Crown,
@@ -25,6 +26,7 @@ import { formatRupiah } from './ExchangeModal';
 interface ShopModalProps {
   saveStore: PlayerSaveStore;
   selectedCharacter: CharacterId;
+  initialTab?: 'all' | ShopCategory;
   onSelectCharacter: (id: CharacterId) => void;
   onBuyItem: (item: ShopItem) => void;
   onToggleEquip: (item: ShopItem, charId: CharacterId) => void;
@@ -38,6 +40,7 @@ const CATEGORY_TABS: { id: 'all' | ShopCategory; label: string }[] = [
   { id: 'hat', label: 'Topi' },
   { id: 'glasses', label: 'Kacamata' },
   { id: 'shirt', label: 'Baju Polos' },
+  { id: 'bag', label: 'Tas' },
   { id: 'carpet', label: 'Karpet Pola' },
   { id: 'booster', label: 'Booster' },
 ];
@@ -45,23 +48,33 @@ const CATEGORY_TABS: { id: 'all' | ShopCategory; label: string }[] = [
 function ItemVisualBadge({ item }: { item: ShopItem }) {
   return (
     <div
-      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-[#432B1D]"
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-[2.5px] border-[#432B1D] shadow-[0_2px_0_#432B1D]"
       style={{ backgroundColor: item.swatchColor }}
     >
-      {item.category === 'hat' && <Crown className="h-6 w-6 text-[#432B1D]" />}
+      {item.category === 'hat' && (
+        <Crown className="h-6 w-6 text-[#432B1D]" strokeWidth={2.5} />
+      )}
       {item.category === 'glasses' && (
         <Glasses
           className="h-6 w-6"
+          strokeWidth={2.5}
           style={{ color: item.swatchColor === '#432B1D' ? '#FFFBF7' : '#432B1D' }}
         />
       )}
-      {item.category === 'shirt' && <Shirt className="h-6 w-6 text-[#432B1D]" />}
-      {item.category === 'carpet' && <Layers className="h-6 w-6 text-[#432B1D]" />}
+      {item.category === 'shirt' && (
+        <Shirt className="h-6 w-6 text-[#432B1D]" strokeWidth={2.5} />
+      )}
+      {item.category === 'bag' && (
+        <Backpack className="h-6 w-6 text-[#432B1D]" strokeWidth={2.5} />
+      )}
+      {item.category === 'carpet' && (
+        <Layers className="h-6 w-6 text-[#432B1D]" strokeWidth={2.5} />
+      )}
       {item.category === 'booster' &&
         (item.id === 'boost_speed' ? (
-          <Zap className="h-6 w-6 text-[#432B1D]" />
+          <Zap className="h-6 w-6 text-[#432B1D]" strokeWidth={2.5} />
         ) : (
-          <Clock className="h-6 w-6 text-[#432B1D]" />
+          <Clock className="h-6 w-6 text-[#432B1D]" strokeWidth={2.5} />
         ))}
     </div>
   );
@@ -70,6 +83,7 @@ function ItemVisualBadge({ item }: { item: ShopItem }) {
 export const ShopModal: React.FC<ShopModalProps> = ({
   saveStore,
   selectedCharacter,
+  initialTab = 'all',
   onSelectCharacter,
   onBuyItem,
   onToggleEquip,
@@ -77,7 +91,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
   onOpenExchange,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'all' | ShopCategory>('all');
+  const [activeTab, setActiveTab] = useState<'all' | ShopCategory>(initialTab);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const visibleItems =
@@ -91,6 +105,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     if (item.category === 'hat') return charLoadout.hat === item.id;
     if (item.category === 'glasses') return charLoadout.glasses === item.id;
     if (item.category === 'shirt') return charLoadout.shirt === item.id;
+    if (item.category === 'bag') return charLoadout.bag === item.id;
     if (item.category === 'carpet') return saveStore.equippedCarpet === item.id;
     return false;
   };
@@ -101,16 +116,16 @@ export const ShopModal: React.FC<ShopModalProps> = ({
   };
 
   return (
-    <div className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-[#432B1D]/40 p-3 sm:p-4">
-      <div className="card-25d flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-[#FFFBF7]">
+    <div className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-[#432B1D]/45 p-2.5 sm:p-4">
+      <div className="card-25d flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-[#FFFBF7]">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#432B1D]/15 bg-[#FFF2DF] px-5 py-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#432B1D]/15 bg-[#FFF2DF] px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#432B1D] bg-[#F26B7A] text-white">
-              <ShoppingBag className="h-5 w-5" />
+              <ShoppingBag className="h-5 w-5" strokeWidth={2.5} />
             </div>
             <div>
-              <h2 className="font-display text-xl font-bold leading-tight text-[#432B1D]">
+              <h2 className="font-display text-lg font-bold leading-tight text-[#432B1D] sm:text-xl">
                 Toko Belanja Dudu &amp; Tata
               </h2>
               <p className="text-xs font-semibold text-[#7A5B47]">
